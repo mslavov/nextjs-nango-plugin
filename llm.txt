@@ -5,7 +5,7 @@ Next.js Nango Plugin is a comprehensive OAuth integration solution for Next.js a
 
 ## Package Information
 - **Name**: nextjs-nango-plugin
-- **Version**: 0.0.1
+- **Version**: 0.1.0
 - **Main**: dist/src/index.js
 - **Types**: dist/src/index.d.ts
 - **Repository**: https://github.com/mslavov/nextjs-nango-plugin
@@ -79,7 +79,7 @@ interface NangoPluginConfig {
 ```typescript
 interface Connection {
   id: string;                    // Unique database identifier
-  provider: string;              // Provider key (e.g., 'github', 'slack')
+  provider: string;              // Provider config key from Nango (e.g., 'github-prod', 'slack')
   connection_id: string;         // Nango connection identifier
   status: 'ACTIVE' | 'INACTIVE' | 'ERROR' | 'EXPIRED';  // Connection state
   metadata?: Record<string, any>; // Flexible metadata storage
@@ -98,10 +98,13 @@ interface ConnectionService {
 
   // Create new connection record
   createConnection(
-    provider: string,
+    provider: string,          // Provider config key from Nango
     connectionId: string,
     metadata?: Record<string, any>
   ): Promise<Connection>;
+
+  // Optional: Get single connection by ID (for idempotent webhook handling)
+  getConnection?(connectionId: string): Promise<Connection | null>;
 
   // Update connection status
   updateConnectionStatus(
@@ -187,21 +190,6 @@ Response:
 }
 ```
 
-#### POST /api/nango/connections
-Create new connection record after OAuth success.
-
-Request Body:
-```json
-{
-  "provider": "github",
-  "connectionId": "nango_conn_123",
-  "metadata": {
-    "owner_id": "user_123",
-    "team_id": "team_456"
-  }
-}
-```
-
 #### PUT /api/nango/connections/{connectionId}
 Update connection status.
 
@@ -215,18 +203,27 @@ Request Body:
 #### DELETE /api/nango/connections/{connectionId}
 Delete connection from both database and Nango.
 
+Request Body:
+```json
+{
+  "providerConfigKey": "github"  // Required to delete from Nango
+}
+```
+
 #### POST /api/nango/webhooks
-Handle Nango webhook events.
+Handle Nango webhook events. Automatically creates connections on successful OAuth.
 
 Headers:
-- `X-Nango-Signature`: HMAC SHA-256 signature (if webhook secret configured)
+- `X-Nango-Signature`: HMAC SHA-256 signature for verification (optional but recommended)
 
 Webhook Events Handled:
-- `auth.success`: Sets status to ACTIVE
-- `auth.error`: Sets status to ERROR
+- `auth` with `operation: 'creation'` and `success: true`: Creates connection or sets status to ACTIVE
+- `auth` with `success: false`: Sets status to ERROR
 - `connection.deleted`: Sets status to INACTIVE
-- `sync.success`: Updates last_sync_at, sets status to ACTIVE
-- `sync.error`: Sets status to ERROR
+- `sync` with `success: true`: Sets status to ACTIVE
+- `sync` with `success: false`: Sets status to ERROR
+
+Note: Webhook handler now supports auto-creating connections with endUser metadata from Nango
 
 ## React Components
 

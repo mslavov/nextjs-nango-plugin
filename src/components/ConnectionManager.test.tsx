@@ -188,6 +188,8 @@ describe('ConnectionManager', () => {
     await waitFor(() => {
       expect(global.fetch).toHaveBeenCalledWith('/api/nango/connections/conn_789', {
         method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ providerConfigKey: 'github' })
       });
       expect(onConnectionUpdate).toHaveBeenCalled();
     });

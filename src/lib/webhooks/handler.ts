@@ -2,22 +2,35 @@ import { z } from 'zod';
 import type { ConnectionService } from '../types/connection-service';
 import crypto from 'crypto';
 
-// Define the webhook event schema
+// Define the webhook event schema matching Nango's actual payload
 const WebhookEventSchema = z.object({
-  provider: z.string(),
   type: z.enum([
-    'sync.success',
-    'sync.error',
-    'auth.success',
-    'auth.error',
+    'sync',
+    'auth',
     'connection.deleted'
   ]),
+  operation: z.enum([
+    'creation',
+    'deletion',
+    'update'
+  ]).optional(),
+  success: z.boolean().optional(),
   connectionId: z.string(),
+  providerConfigKey: z.string(),
+  provider: z.string(),
+  environment: z.string().optional(),
+  authMode: z.string().optional(),
   syncJobId: z.string().optional(),
-  data: z.any(),
+  data: z.any().optional(),
+  endUser: z.object({
+    endUserId: z.string(),
+    organizationId: z.string().optional(),
+  }).optional(),
   error: z.object({
     message: z.string(),
-    code: z.string(),
+    code: z.string().optional(),
+    type: z.string().optional(),
+    description: z.string().optional(),
   }).optional(),
   createdAt: z.string().optional(),
 });
@@ -54,31 +67,80 @@ export async function handleWebhook(
     // Parse and validate the webhook event
     const event = WebhookEventSchema.parse(JSON.parse(body));
 
-    // Update connection status based on event type
+    // Handle different event types
     switch (event.type) {
-      case 'auth.success':
-        await connectionService.updateConnectionStatus(event.connectionId, 'ACTIVE');
-        break;
+      case 'auth':
+        if (event.operation === 'creation' && event.success) {
+          // Check if connection already exists (for idempotency)
+          if (connectionService.getConnection) {
+            const existingConnection = await connectionService.getConnection(event.connectionId);
+            if (existingConnection) {
+              // Connection exists, just update status
+              await connectionService.updateConnectionStatus(event.connectionId, 'ACTIVE');
+              break;
+            }
+          }
 
-      case 'auth.error':
-        await connectionService.updateConnectionStatus(event.connectionId, 'ERROR');
+          // Create a new connection when auth succeeds
+          const metadata: Record<string, any> = {};
+
+          // Add endUser data to metadata if available
+          if (event.endUser) {
+            if (event.endUser.endUserId) {
+              metadata.owner_id = event.endUser.endUserId;
+            }
+            if (event.endUser.organizationId) {
+              metadata.organization_id = event.endUser.organizationId;
+            }
+          }
+
+          // Add environment if available
+          if (event.environment) {
+            metadata.environment = event.environment;
+          }
+
+          try {
+            // Try to create the connection
+            await connectionService.createConnection(
+              event.providerConfigKey,
+              event.connectionId,
+              metadata
+            );
+          } catch (error) {
+            // If creation fails, try updating status as fallback
+            console.log(`Failed to create connection ${event.connectionId}:`, error);
+            try {
+              await connectionService.updateConnectionStatus(event.connectionId, 'ACTIVE');
+            } catch (updateError) {
+              console.error(`Failed to update connection ${event.connectionId}:`, updateError);
+              throw error; // Re-throw original error
+            }
+          }
+        } else if (!event.success) {
+          // Auth failed, update status to ERROR if connection exists
+          try {
+            await connectionService.updateConnectionStatus(event.connectionId, 'ERROR');
+          } catch (error) {
+            console.log(`Connection ${event.connectionId} doesn't exist yet, skipping status update`);
+          }
+        }
         break;
 
       case 'connection.deleted':
         await connectionService.updateConnectionStatus(event.connectionId, 'INACTIVE');
         break;
 
-      case 'sync.success':
-        // Ensure active status after successful sync
-        await connectionService.updateConnectionStatus(event.connectionId, 'ACTIVE');
-        break;
-
-      case 'sync.error':
-        await connectionService.updateConnectionStatus(event.connectionId, 'ERROR');
+      case 'sync':
+        if (event.success) {
+          // Ensure active status after successful sync
+          await connectionService.updateConnectionStatus(event.connectionId, 'ACTIVE');
+        } else {
+          await connectionService.updateConnectionStatus(event.connectionId, 'ERROR');
+        }
         break;
     }
 
-    return { success: true, eventType: event.type };
+    return { success: true, eventType: event.type, operation: event.operation };
   } catch (error) {
     console.error('Webhook processing failed:', error);
     throw error;

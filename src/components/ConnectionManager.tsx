@@ -152,10 +152,12 @@ export function ConnectionManager({
     }
   };
 
-  const handleDisconnect = async (_providerId: string, connectionId: string) => {
+  const handleDisconnect = async (providerId: string, connectionId: string) => {
     try {
       const res = await fetch(`${apiEndpoint}/connections/${connectionId}`, {
-        method: 'DELETE'
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ providerConfigKey: providerId })
       });
 
       if (!res.ok) {

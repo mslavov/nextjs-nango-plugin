@@ -7,7 +7,7 @@ export interface Connection {
   /** Unique identifier for the connection in your database */
   id: string;
 
-  /** The provider/integration name (e.g., 'github', 'slack', 'salesforce') - must match Nango configuration */
+  /** The provider config key (unique integration identifier from Nango, e.g., 'github-prod', 'slack-dev', 'salesforce') */
   provider: string;
 
   /** The connection ID used in Nango - a unique identifier for this connection */
@@ -71,7 +71,7 @@ export interface ConnectionService {
    * Creates a new connection record in your database.
    * The implementation should determine ownership from the request context.
    *
-   * @param provider - The provider/integration name (must match Nango configuration)
+   * @param provider - The provider config key (unique integration identifier from Nango)
    * @param connectionId - Unique identifier for this connection (typically owner_id)
    * @param metadata - Additional metadata to store with the connection.
    *                   Should include ownership information (owner_id, team_id, etc.)
@@ -81,7 +81,7 @@ export interface ConnectionService {
    *
    * @example
    * const connection = await service.createConnection(
-   *   'github',
+   *   'github-prod',
    *   'user123',
    *   {
    *     owner_id: 'user123',
@@ -96,6 +96,15 @@ export interface ConnectionService {
     connectionId: string,
     metadata?: Record<string, any>
   ): Promise<Connection>;
+
+  /**
+   * Retrieves a single connection by its ID.
+   * Implementation should verify ownership before returning.
+   *
+   * @param connectionId - The connection ID to retrieve
+   * @returns The connection if found and owned by the requester, null otherwise
+   */
+  getConnection?(connectionId: string): Promise<Connection | null>;
 
   /**
    * Updates the status of an existing connection.

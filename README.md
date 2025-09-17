@@ -96,6 +96,7 @@ The plugin uses a powerful dependency injection pattern that adapts to ANY datab
 interface ConnectionService {
   getConnections(): Promise<Connection[]>;
   createConnection(provider: string, connectionId: string, metadata?: any): Promise<Connection>;
+  getConnection?(connectionId: string): Promise<Connection | null>; // Optional: for idempotent webhook handling
   updateConnectionStatus(connectionId: string, status: ConnectionStatus): Promise<Connection>;
   deleteConnection(connectionId: string): Promise<void>;
 }
@@ -211,9 +212,9 @@ This single handler manages:
 - `GET /api/nango/connections` - List user's connections
 - `GET /api/nango/integrations` - List available providers
 - `POST /api/nango/auth/session` - Create OAuth session
-- `POST /api/nango/webhooks` - Handle Nango webhooks
+- `POST /api/nango/webhooks` - Handle Nango webhooks (auto-creates connections on successful auth)
 - `PUT /api/nango/connections/[id]` - Update connection status
-- `DELETE /api/nango/connections/[id]` - Delete connection
+- `DELETE /api/nango/connections/[id]` - Delete connection (removes from both database and Nango)
 
 ### Components
 

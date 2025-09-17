@@ -133,18 +133,6 @@ export function createNangoHandler(config: NangoPluginConfig) {
             return jsonResponse(session);
           }
 
-          case 'connections': {
-            // Create a new connection
-            const service = await config.createConnectionService(request);
-            const data = await request.json() as any;
-
-            const connection = await service.createConnection(
-              data.provider,
-              data.connectionId,
-              data.metadata
-            );
-            return jsonResponse(connection);
-          }
 
           default:
             return jsonResponse({ error: 'Not found' }, { status: 404 });
@@ -197,8 +185,17 @@ export function createNangoHandler(config: NangoPluginConfig) {
           const connectionId = path.split('/')[1];
           const service = await config.createConnectionService(request);
 
-          // Note: To delete from Nango, we'd need the providerConfigKey
-          // which would need to be fetched or stored with the connection
+          // Get providerConfigKey from request body
+          const data = await request.json() as any;
+          const providerConfigKey = data.providerConfigKey;
+
+          // Delete from Nango if providerConfigKey is provided
+          if (providerConfigKey) {
+            const deleted = await nango.deleteConnection(connectionId, providerConfigKey);
+            if (!deleted) {
+              console.warn(`Failed to delete connection from Nango: ${connectionId}`);
+            }
+          }
 
           // Delete from our database
           await service.deleteConnection(connectionId);

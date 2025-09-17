@@ -104,8 +104,8 @@ describe('NangoService', () => {
     it('returns formatted list of integrations', async () => {
       const mockIntegrations = {
         configs: [
-          { unique_key: 'slack', provider: 'slack' },
-          { unique_key: 'github', provider: 'github' },
+          { unique_key: 'slack', provider: 'slack', displayName: 'Slack' },
+          { unique_key: 'github', provider: 'github', displayName: 'GitHub' },
         ],
       };
       mockNangoClient.listIntegrations.mockResolvedValue(mockIntegrations as any);
@@ -114,8 +114,8 @@ describe('NangoService', () => {
 
       expect(mockNangoClient.listIntegrations).toHaveBeenCalled();
       expect(result).toEqual([
-        { id: 'slack', provider: 'slack' },
-        { id: 'github', provider: 'github' },
+        { id: 'slack', provider: 'slack', displayName: 'Slack' },
+        { id: 'github', provider: 'github', displayName: 'GitHub' },
       ]);
     });
 

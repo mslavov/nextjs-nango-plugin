@@ -12,17 +12,27 @@ describe('handleWebhook', () => {
       createConnection: jest.fn(),
       deleteConnection: jest.fn(),
       updateConnectionStatus: jest.fn(),
+      getConnection: jest.fn(),
     };
   });
 
   describe('webhook processing', () => {
-    it('handles auth.success event', async () => {
+    it('handles auth creation success event', async () => {
       const event = {
-        provider: 'slack',
-        type: 'auth.success',
+        type: 'auth',
+        operation: 'creation',
+        success: true,
         connectionId: 'conn-123',
-        data: {},
+        providerConfigKey: 'slack-prod',
+        provider: 'slack',
+        endUser: {
+          endUserId: 'user-123',
+          organizationId: 'org-456'
+        },
+        environment: 'production',
       };
+
+      mockConnectionService.getConnection.mockResolvedValue(null);
 
       const result = await handleWebhook(
         JSON.stringify(event),
@@ -31,19 +41,62 @@ describe('handleWebhook', () => {
         null
       );
 
-      expect(mockConnectionService.updateConnectionStatus).toHaveBeenCalledWith('conn-123', 'ACTIVE');
-      expect(result).toEqual({ success: true, eventType: 'auth.success' });
+      expect(mockConnectionService.getConnection).toHaveBeenCalledWith('conn-123');
+      expect(mockConnectionService.createConnection).toHaveBeenCalledWith(
+        'slack-prod',
+        'conn-123',
+        {
+          owner_id: 'user-123',
+          organization_id: 'org-456',
+          environment: 'production'
+        }
+      );
+      expect(result).toEqual({ success: true, eventType: 'auth', operation: 'creation' });
     });
 
-    it('handles auth.error event', async () => {
+    it('handles auth creation success when connection exists', async () => {
       const event = {
+        type: 'auth',
+        operation: 'creation',
+        success: true,
+        connectionId: 'conn-existing',
+        providerConfigKey: 'github-prod',
         provider: 'github',
-        type: 'auth.error',
+      };
+
+      mockConnectionService.getConnection.mockResolvedValue({
+        id: 'db-id',
+        connection_id: 'conn-existing',
+        provider: 'github-prod',
+        status: 'INACTIVE',
+        created_at: '2024-01-01T00:00:00Z',
+        updated_at: '2024-01-01T00:00:00Z'
+      });
+
+      const result = await handleWebhook(
+        JSON.stringify(event),
+        null,
+        mockConnectionService,
+        null
+      );
+
+      expect(mockConnectionService.getConnection).toHaveBeenCalledWith('conn-existing');
+      expect(mockConnectionService.createConnection).not.toHaveBeenCalled();
+      expect(mockConnectionService.updateConnectionStatus).toHaveBeenCalledWith('conn-existing', 'ACTIVE');
+      expect(result).toEqual({ success: true, eventType: 'auth', operation: 'creation' });
+    });
+
+    it('handles auth failure event', async () => {
+      const event = {
+        type: 'auth',
+        operation: 'creation',
+        success: false,
         connectionId: 'conn-456',
-        data: {},
+        providerConfigKey: 'github-prod',
+        provider: 'github',
         error: {
           message: 'Authentication failed',
-          code: 'AUTH_FAILED',
+          type: 'AUTH_FAILED',
         },
       };
 
@@ -55,15 +108,15 @@ describe('handleWebhook', () => {
       );
 
       expect(mockConnectionService.updateConnectionStatus).toHaveBeenCalledWith('conn-456', 'ERROR');
-      expect(result).toEqual({ success: true, eventType: 'auth.error' });
+      expect(result).toEqual({ success: true, eventType: 'auth', operation: 'creation' });
     });
 
     it('handles connection.deleted event', async () => {
       const event = {
-        provider: 'google_drive',
         type: 'connection.deleted',
         connectionId: 'conn-789',
-        data: {},
+        providerConfigKey: 'google_drive-prod',
+        provider: 'google_drive',
       };
 
       const result = await handleWebhook(
@@ -74,16 +127,17 @@ describe('handleWebhook', () => {
       );
 
       expect(mockConnectionService.updateConnectionStatus).toHaveBeenCalledWith('conn-789', 'INACTIVE');
-      expect(result).toEqual({ success: true, eventType: 'connection.deleted' });
+      expect(result).toEqual({ success: true, eventType: 'connection.deleted', operation: undefined });
     });
 
-    it('handles sync.success event', async () => {
+    it('handles sync success event', async () => {
       const event = {
-        provider: 'salesforce',
-        type: 'sync.success',
+        type: 'sync',
+        success: true,
         connectionId: 'conn-111',
+        providerConfigKey: 'salesforce-prod',
+        provider: 'salesforce',
         syncJobId: 'sync-job-123',
-        data: {},
       };
 
       const result = await handleWebhook(
@@ -94,19 +148,20 @@ describe('handleWebhook', () => {
       );
 
       expect(mockConnectionService.updateConnectionStatus).toHaveBeenCalledWith('conn-111', 'ACTIVE');
-      expect(result).toEqual({ success: true, eventType: 'sync.success' });
+      expect(result).toEqual({ success: true, eventType: 'sync', operation: undefined });
     });
 
-    it('handles sync.error event', async () => {
+    it('handles sync error event', async () => {
       const event = {
-        provider: 'hubspot',
-        type: 'sync.error',
+        type: 'sync',
+        success: false,
         connectionId: 'conn-222',
+        providerConfigKey: 'hubspot-prod',
+        provider: 'hubspot',
         syncJobId: 'sync-job-456',
-        data: {},
         error: {
           message: 'Sync failed',
-          code: 'SYNC_FAILED',
+          type: 'SYNC_FAILED',
         },
       };
 
@@ -118,7 +173,7 @@ describe('handleWebhook', () => {
       );
 
       expect(mockConnectionService.updateConnectionStatus).toHaveBeenCalledWith('conn-222', 'ERROR');
-      expect(result).toEqual({ success: true, eventType: 'sync.error' });
+      expect(result).toEqual({ success: true, eventType: 'sync', operation: undefined });
     });
   });
 
@@ -127,26 +182,32 @@ describe('handleWebhook', () => {
 
     it('verifies valid signature', async () => {
       const event = {
-        provider: 'slack',
-        type: 'auth.success',
+        type: 'auth',
+        operation: 'creation',
+        success: true,
         connectionId: 'conn-333',
-        data: {},
+        providerConfigKey: 'slack-prod',
+        provider: 'slack',
       };
       const body = JSON.stringify(event);
       const signature = crypto.createHmac('sha256', webhookSecret).update(body).digest('hex');
 
+      mockConnectionService.getConnection.mockResolvedValue(null);
+
       const result = await handleWebhook(body, signature, mockConnectionService, webhookSecret);
 
-      expect(mockConnectionService.updateConnectionStatus).toHaveBeenCalledWith('conn-333', 'ACTIVE');
-      expect(result).toEqual({ success: true, eventType: 'auth.success' });
+      expect(mockConnectionService.createConnection).toHaveBeenCalled();
+      expect(result).toEqual({ success: true, eventType: 'auth', operation: 'creation' });
     });
 
     it('rejects invalid signature', async () => {
       const event = {
-        provider: 'slack',
-        type: 'auth.success',
+        type: 'auth',
+        operation: 'creation',
+        success: true,
         connectionId: 'conn-444',
-        data: {},
+        providerConfigKey: 'slack-prod',
+        provider: 'slack',
       };
       const body = JSON.stringify(event);
       // Invalid signature should be same length as valid hex signature
@@ -161,10 +222,12 @@ describe('handleWebhook', () => {
 
     it('rejects missing signature when secret is configured', async () => {
       const event = {
-        provider: 'slack',
-        type: 'auth.success',
+        type: 'auth',
+        operation: 'creation',
+        success: true,
         connectionId: 'conn-555',
-        data: {},
+        providerConfigKey: 'slack-prod',
+        provider: 'slack',
       };
       const body = JSON.stringify(event);
 
@@ -177,17 +240,21 @@ describe('handleWebhook', () => {
 
     it('processes without verification when secret is not configured', async () => {
       const event = {
-        provider: 'slack',
-        type: 'auth.success',
+        type: 'auth',
+        operation: 'creation',
+        success: true,
         connectionId: 'conn-666',
-        data: {},
+        providerConfigKey: 'slack-prod',
+        provider: 'slack',
       };
       const body = JSON.stringify(event);
 
+      mockConnectionService.getConnection.mockResolvedValue(null);
+
       const result = await handleWebhook(body, null, mockConnectionService, null);
 
-      expect(mockConnectionService.updateConnectionStatus).toHaveBeenCalledWith('conn-666', 'ACTIVE');
-      expect(result).toEqual({ success: true, eventType: 'auth.success' });
+      expect(mockConnectionService.createConnection).toHaveBeenCalled();
+      expect(result).toEqual({ success: true, eventType: 'auth', operation: 'creation' });
     });
   });
 
@@ -217,8 +284,10 @@ describe('handleWebhook', () => {
 
     it('throws error for invalid event type', async () => {
       const invalidEvent = {
-        provider: 'slack',
         type: 'invalid.type',
+        connectionId: 'conn-123',
+        providerConfigKey: 'slack-prod',
+        provider: 'slack',
         connectionId: 'conn-777',
         data: {},
       };
@@ -233,18 +302,25 @@ describe('handleWebhook', () => {
 
     it('logs and re-throws service errors', async () => {
       const event = {
-        provider: 'slack',
-        type: 'auth.success',
+        type: 'auth',
+        operation: 'creation',
+        success: true,
         connectionId: 'conn-888',
-        data: {},
+        providerConfigKey: 'slack-prod',
+        provider: 'slack',
       };
       const body = JSON.stringify(event);
 
+      mockConnectionService.getConnection.mockResolvedValue(null);
+      mockConnectionService.createConnection.mockRejectedValue(
+        new Error('Database error')
+      );
       mockConnectionService.updateConnectionStatus.mockRejectedValue(
         new Error('Database error')
       );
 
       const consoleSpy = jest.spyOn(console, 'error').mockImplementation();
+      const consoleLogSpy = jest.spyOn(console, 'log').mockImplementation();
 
       await expect(
         handleWebhook(body, null, mockConnectionService, null)
@@ -256,6 +332,7 @@ describe('handleWebhook', () => {
       );
 
       consoleSpy.mockRestore();
+      consoleLogSpy.mockRestore();
     });
   });
 });

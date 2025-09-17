@@ -255,42 +255,6 @@ describe('createNangoHandler', () => {
       });
     });
 
-    it('handles /connections endpoint for creating connections', async () => {
-      const connectionData = {
-        provider: 'slack',
-        connectionId: 'conn-new',
-        metadata: { team: 'engineering' },
-      };
-
-      const mockRequest = {
-        json: jest.fn().mockResolvedValue(connectionData),
-      } as any;
-
-      const mockConnection = {
-        id: 'id-new',
-        connection_id: 'conn-new',
-        provider: 'slack',
-        status: 'ACTIVE' as const,
-        metadata: { owner_id: 'user-1', team: 'engineering' },
-        created_at: '2024-01-01T00:00:00Z',
-        updated_at: '2024-01-01T00:00:00Z'
-      };
-      mockConnectionService.createConnection.mockResolvedValue(mockConnection);
-
-      const response = await handler.POST(mockRequest, {
-        params: { path: ['connections'] },
-      });
-
-      const data = await response.json();
-
-      expect(config.createConnectionService).toHaveBeenCalledWith(mockRequest);
-      expect(mockConnectionService.createConnection).toHaveBeenCalledWith(
-        'slack',
-        'conn-new',
-        { team: 'engineering' }
-      );
-      expect(data).toEqual(mockConnection);
-    });
 
     it('returns error when required end_user.id is missing', async () => {
       const sessionData = {
@@ -377,8 +341,13 @@ describe('createNangoHandler', () => {
   });
 
   describe('DELETE endpoints', () => {
-    it('handles connection deletion', async () => {
-      const mockRequest = {} as any;
+    it('handles connection deletion with providerConfigKey', async () => {
+      const mockRequest = {
+        json: jest.fn().mockResolvedValue({ providerConfigKey: 'slack-prod' }),
+      } as any;
+
+      mockNangoService.deleteConnection.mockResolvedValue(true);
+      mockConnectionService.deleteConnection.mockResolvedValue(true);
 
       const response = await handler.DELETE(mockRequest, {
         params: { path: ['connections', 'conn-123'] },
@@ -387,6 +356,26 @@ describe('createNangoHandler', () => {
       const data = await response.json();
 
       expect(config.createConnectionService).toHaveBeenCalledWith(mockRequest);
+      expect(mockNangoService.deleteConnection).toHaveBeenCalledWith('conn-123', 'slack-prod');
+      expect(mockConnectionService.deleteConnection).toHaveBeenCalledWith('conn-123');
+      expect(data).toEqual({ success: true });
+    });
+
+    it('handles connection deletion without providerConfigKey', async () => {
+      const mockRequest = {
+        json: jest.fn().mockResolvedValue({}),
+      } as any;
+
+      mockConnectionService.deleteConnection.mockResolvedValue(true);
+
+      const response = await handler.DELETE(mockRequest, {
+        params: { path: ['connections', 'conn-123'] },
+      });
+
+      const data = await response.json();
+
+      expect(config.createConnectionService).toHaveBeenCalledWith(mockRequest);
+      expect(mockNangoService.deleteConnection).not.toHaveBeenCalled();
       expect(mockConnectionService.deleteConnection).toHaveBeenCalledWith('conn-123');
       expect(data).toEqual({ success: true });
     });
@@ -407,7 +396,9 @@ describe('createNangoHandler', () => {
     it('handles errors gracefully', async () => {
       mockConnectionService.deleteConnection.mockRejectedValue(new Error('Delete failed'));
 
-      const mockRequest = {} as any;
+      const mockRequest = {
+        json: jest.fn().mockResolvedValue({}),
+      } as any;
 
       const response = await handler.DELETE(mockRequest, {
         params: { path: ['connections', 'conn-123'] },

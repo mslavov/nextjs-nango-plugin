@@ -39,7 +39,7 @@ export class NangoService {
     return integrations.configs.map((config: any) => ({
       id: config.unique_key,
       provider: config.provider,
-      dispayName: config.dispayName
+      displayName: config.displayName
     }));
   }
 

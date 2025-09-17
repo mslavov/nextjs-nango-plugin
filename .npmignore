@@ -1,0 +1,25 @@
+# Source files
+src/
+cli/
+
+# Development files
+.claude/
+examples/
+*.test.ts
+*.test.tsx
+jest.config.js
+jest.setup.js
+tsconfig.json
+.gitignore
+
+# Git
+.git/
+.github/
+
+# IDE
+.vscode/
+.idea/
+
+# Misc
+*.log
+.DS_Store

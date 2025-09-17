@@ -1,0 +1,57 @@
+{
+  "name": "nextjs-nango-plugin",
+  "version": "0.0.1",
+  "description": "Easy Nango integration for Next.js apps with flexible database support",
+  "main": "dist/src/index.js",
+  "types": "dist/src/index.d.ts",
+  "bin": {
+    "nextjs-nango-plugin": "./dist/cli/index.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch",
+    "test": "jest",
+    "prepublishOnly": "npm run build"
+  },
+  "keywords": [
+    "nextjs",
+    "nango",
+    "oauth",
+    "integration",
+    "supabase",
+    "webhook",
+    "api"
+  ],
+  "author": "Milko Slavov",
+  "license": "MIT",
+  "files": [
+    "dist"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/mslavov/nextjs-nango-plugin"
+  },
+  "dependencies": {
+    "@nangohq/frontend": "^0.67.8",
+    "@nangohq/node": "^0.67.8",
+    "chalk": "^4.1.2",
+    "commander": "^14.0.1",
+    "inquirer": "^12.9.6",
+    "zod": "^4.1.9"
+  },
+  "devDependencies": {
+    "@testing-library/jest-dom": "^6.8.0",
+    "@testing-library/react": "^16.3.0",
+    "@types/jest": "^30.0.0",
+    "@types/node": "^24.5.1",
+    "@types/react": "^19.1.13",
+    "jest": "^30.1.3",
+    "jest-environment-jsdom": "^30.1.2",
+    "ts-jest": "^29.4.2",
+    "typescript": "^5.9.2"
+  },
+  "peerDependencies": {
+    "next": "^15.5.3",
+    "react": "^19.1.1"
+  }
+}

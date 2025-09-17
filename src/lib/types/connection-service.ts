@@ -1,11 +1,17 @@
 
 /**
  * Represents a connection between your application and an external service via Nango.
- * This interface is generic and flexible to support various ownership models.
+ * This interface explicitly defines ownership to ensure proper access control.
  */
 export interface Connection {
   /** Unique identifier for the connection in your database */
   id: string;
+
+  /** The owner identifier - typically user ID, required for all connections */
+  owner_id: string;
+
+  /** Optional organization/team identifier for multi-tenant scenarios */
+  organization_id?: string;
 
   /** The provider config key (unique integration identifier from Nango, e.g., 'github-prod', 'slack-dev', 'salesforce') */
   provider: string;
@@ -19,10 +25,10 @@ export interface Connection {
   /**
    * Flexible metadata storage for any additional information.
    * Common uses:
-   * - Ownership details (user_id, team_id, org_id)
    * - Connection configuration
    * - Custom application data
    * - Scopes or permissions
+   * - Environment information
    */
   metadata?: Record<string, any>;
 
@@ -41,12 +47,12 @@ export interface ConnectionService {
   /**
    * Retrieves connections based on the current context and optional filters.
    *
-   * @param metadata - Optional metadata filters to query specific connections.
-   *                   Only connections with ALL matching metadata fields will be returned.
-   *                   Common filters:
-   *                   - { owner_id: 'user123' } - Get connections for a specific user
-   *                   - { team_id: 'team456' } - Get connections for a team
-   *                   - { owner_id: 'user123', provider: 'github' } - User's GitHub connections
+   * @param filters - Optional filters to query specific connections.
+   *                  Can filter by ownership fields or metadata.
+   *                  Common filters:
+   *                  - { owner_id: 'user123' } - Get connections for a specific user
+   *                  - { organization_id: 'org456' } - Get connections for an organization
+   *                  - { provider: 'github' } - Get GitHub connections
    *
    * @returns Array of connections matching the criteria
    *
@@ -59,33 +65,34 @@ export interface ConnectionService {
    * const userConnections = await service.getConnections({ owner_id: 'user123' });
    *
    * @example
-   * // Get team connections for a specific provider
-   * const teamGithubConnections = await service.getConnections({
-   *   team_id: 'team456',
+   * // Get organization connections for a specific provider
+   * const orgGithubConnections = await service.getConnections({
+   *   organization_id: 'org456',
    *   provider: 'github'
    * });
    */
-  getConnections(metadata?: Record<string, any>): Promise<Connection[]>;
+  getConnections(filters?: Record<string, any>): Promise<Connection[]>;
 
   /**
    * Creates a new connection record in your database.
-   * The implementation should determine ownership from the request context.
+   * Ownership is explicitly required to ensure proper access control.
    *
    * @param provider - The provider config key (unique integration identifier from Nango)
-   * @param connectionId - Unique identifier for this connection (typically owner_id)
+   * @param connectionId - Unique identifier for this connection in Nango
+   * @param ownerId - The owner identifier (typically user ID)
+   * @param organizationId - Optional organization/team identifier
    * @param metadata - Additional metadata to store with the connection.
-   *                   Should include ownership information (owner_id, team_id, etc.)
-   *                   and any custom data needed by your application.
+   *                   Can include custom data like environment, scopes, etc.
    *
    * @returns The created connection record
    *
    * @example
    * const connection = await service.createConnection(
    *   'github-prod',
+   *   'conn_abc123',
    *   'user123',
+   *   'org456',  // optional
    *   {
-   *     owner_id: 'user123',
-   *     team_id: 'team456',
    *     scopes: ['repo', 'user'],
    *     environment: 'production'
    *   }
@@ -94,6 +101,8 @@ export interface ConnectionService {
   createConnection(
     provider: string,
     connectionId: string,
+    ownerId: string,
+    organizationId?: string,
     metadata?: Record<string, any>
   ): Promise<Connection>;
 

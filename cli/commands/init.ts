@@ -43,33 +43,66 @@ class MyConnectionService implements ConnectionService {
   constructor(
     private db: any, // Your database client
     private tableName: string,
-    private ownerField: string,
-    private secondaryOwnerField?: string
+    private userId: string,
+    private organizationId?: string
   ) {}
 
-  async getConnections(ownerId: string, secondaryOwnerId?: string) {
+  async getConnections(filters?: Record<string, any>) {
     // Implement your database query here
     // Example for SQL-based database:
-    // const query = this.db.from(this.tableName).select('*').where(this.ownerField, ownerId);
-    // if (secondaryOwnerId && this.secondaryOwnerField) {
-    //   query.where(this.secondaryOwnerField, secondaryOwnerId);
+    // const query = this.db.from(this.tableName).select('*').where('owner_id', this.userId);
+    // if (this.organizationId) {
+    //   query.where('organization_id', this.organizationId);
+    // }
+    // if (filters) {
+    //   Object.entries(filters).forEach(([key, value]) => {
+    //     query.where(key, value);
+    //   });
     // }
     // return await query;
     throw new Error('getConnections not implemented');
   }
 
-  async createConnection(ownerId: string, provider: string, connectionId: string, secondaryOwnerId?: string) {
+  async createConnection(
+    provider: string,
+    connectionId: string,
+    ownerId: string,
+    organizationId?: string,
+    metadata?: Record<string, any>
+  ) {
     // Implement your database insert here
+    // const connection = {
+    //   id: generateId(),
+    //   owner_id: ownerId,
+    //   organization_id: organizationId,
+    //   provider,
+    //   connection_id: connectionId,
+    //   status: 'ACTIVE',
+    //   metadata,
+    //   created_at: new Date(),
+    //   updated_at: new Date()
+    // };
+    // await this.db.from(this.tableName).insert(connection);
+    // return connection;
     throw new Error('createConnection not implemented');
   }
 
   async updateConnectionStatus(connectionId: string, status: 'ACTIVE' | 'INACTIVE' | 'ERROR' | 'EXPIRED') {
     // Implement your database update here
+    // await this.db.from(this.tableName)
+    //   .update({ status, updated_at: new Date() })
+    //   .where('connection_id', connectionId)
+    //   .where('owner_id', this.userId);
     throw new Error('updateConnectionStatus not implemented');
   }
 
   async deleteConnection(connectionId: string) {
     // Implement your database delete here
+    // const result = await this.db.from(this.tableName)
+    //   .delete()
+    //   .where('connection_id', connectionId)
+    //   .where('owner_id', this.userId);
+    // return result.rowCount > 0;
     throw new Error('deleteConnection not implemented');
   }
 }
@@ -95,8 +128,10 @@ export const nangoConfig: NangoPluginConfig = {
     // Then return your ConnectionService implementation:
 
     // Example:
-    // const db = request ? await getUserDB(request) : getAdminDB();
-    // return new MyConnectionService(db, 'nango_connections', 'user_id', 'org_id');
+    // const db = await getDB();  // Your database connection
+    // const userId = request ? await getUserId(request) : 'system';
+    // const organizationId = request ? await getOrgId(request) : undefined;
+    // return new MyConnectionService(db, 'nango_connections', userId, organizationId);
 
     throw new Error('createConnectionService not implemented - you must implement this');
   },
@@ -226,13 +261,12 @@ export default function IntegrationsPage() {
   console.log(chalk.cyan('\n3. Create your database schema:'));
   console.log('   Create a table for storing Nango connections with these fields:');
   console.log('   - id (primary key)');
+  console.log('   - owner_id (string, required) - User/entity that owns this connection');
+  console.log('   - organization_id (string, optional) - For multi-tenant scenarios');
   console.log('   - provider (string)');
   console.log('   - connection_id (string, unique)');
-  console.log('   - owner_id (string) - Your primary owner field');
-  console.log('   - secondary_owner_id (string, optional) - If using multi-tenancy');
   console.log('   - status (enum: ACTIVE, INACTIVE, ERROR, EXPIRED)');
-  console.log('   - metadata (JSON/JSONB, optional)');
-  console.log('   - last_sync_at (timestamp, optional)');
+  console.log('   - metadata (JSON/JSONB, optional) - For custom data');
   console.log('   - created_at (timestamp)');
   console.log('   - updated_at (timestamp)');
 

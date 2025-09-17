@@ -97,16 +97,17 @@ Create a table for storing connections:
 ```sql
 CREATE TABLE nango_connections (
   id VARCHAR(255) PRIMARY KEY,
-  provider VARCHAR(100) NOT NULL,
+  owner_id VARCHAR(255) NOT NULL,        -- User/entity that owns this connection
+  organization_id VARCHAR(255),          -- Optional: for multi-tenant scenarios
+  provider VARCHAR(100) NOT NULL,        -- Provider config key from Nango
   connection_id VARCHAR(255) UNIQUE NOT NULL,
-  owner_id VARCHAR(255) NOT NULL,
-  secondary_owner_id VARCHAR(255),
-  status VARCHAR(20) NOT NULL,
-  metadata JSONB,
-  last_sync_at TIMESTAMP,
+  status VARCHAR(20) NOT NULL,           -- ACTIVE, INACTIVE, ERROR, EXPIRED
+  metadata JSONB,                        -- Additional custom data
   created_at TIMESTAMP DEFAULT NOW(),
   updated_at TIMESTAMP DEFAULT NOW(),
+
   INDEX idx_owner (owner_id),
+  INDEX idx_org (organization_id),
   INDEX idx_connection (connection_id)
 );
 ```

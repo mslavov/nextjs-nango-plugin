@@ -67,19 +67,22 @@ describe('createNangoHandler', () => {
       const mockConnections = [
         {
           id: 'id-1',
+          owner_id: 'user-1',
           connection_id: 'conn-1',
           provider: 'slack',
           status: 'ACTIVE' as const,
-          metadata: { owner_id: 'user-1' },
+          metadata: { environment: 'production' },
           created_at: '2024-01-01T00:00:00Z',
           updated_at: '2024-01-01T00:00:00Z'
         },
         {
           id: 'id-2',
+          owner_id: 'user-1',
+          organization_id: 'org-1',
           connection_id: 'conn-2',
           provider: 'github',
           status: 'ACTIVE' as const,
-          metadata: { owner_id: 'user-1' },
+          metadata: { environment: 'staging' },
           created_at: '2024-01-01T00:00:00Z',
           updated_at: '2024-01-01T00:00:00Z'
         },
@@ -106,10 +109,12 @@ describe('createNangoHandler', () => {
       const mockConnections = [
         {
           id: 'id-1',
+          owner_id: 'user-1',
+          organization_id: 'org-1',
           connection_id: 'conn-1',
           provider: 'slack',
           status: 'ACTIVE' as const,
-          metadata: { owner_id: 'user-1', team_id: 'team-1' },
+          metadata: { team_id: 'team-1', environment: 'production' },
           created_at: '2024-01-01T00:00:00Z',
           updated_at: '2024-01-01T00:00:00Z'
         },

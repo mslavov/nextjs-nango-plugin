@@ -53,13 +53,35 @@ export const nangoConfig: NangoPluginConfig = {
 };
 ```
 
-### 3. Configure Nango
+### 3. Create your database schema
+
+Create a table for storing Nango connections with these required fields:
+
+```sql
+CREATE TABLE nango_connections (
+  id VARCHAR(255) PRIMARY KEY,
+  owner_id VARCHAR(255) NOT NULL,        -- User/entity that owns this connection
+  organization_id VARCHAR(255),          -- Optional: for multi-tenant scenarios
+  provider VARCHAR(100) NOT NULL,        -- Provider config key from Nango
+  connection_id VARCHAR(255) UNIQUE NOT NULL,
+  status VARCHAR(20) NOT NULL,           -- ACTIVE, INACTIVE, ERROR, EXPIRED
+  metadata JSONB,                        -- Additional custom data
+  created_at TIMESTAMP DEFAULT NOW(),
+  updated_at TIMESTAMP DEFAULT NOW(),
+
+  INDEX idx_owner (owner_id),
+  INDEX idx_org (organization_id),
+  INDEX idx_connection (connection_id)
+);
+```
+
+### 4. Configure Nango
 
 In your [Nango dashboard](https://app.nango.dev):
 1. Add your OAuth providers (GitHub, Notion, etc.)
 2. Set your webhook URL to: `https://your-app.com/api/nango/webhooks`
 
-### 4. Use the ConnectionManager component
+### 5. Use the ConnectionManager component
 
 ```tsx
 import { ConnectionManager } from 'nextjs-nango-plugin';
@@ -93,20 +115,38 @@ export default function IntegrationsPage() {
 The plugin uses a powerful dependency injection pattern that adapts to ANY database and ownership model through a single `ConnectionService` interface:
 
 ```typescript
+interface Connection {
+  id: string;                    // Unique identifier in your database
+  owner_id: string;              // Required: User/entity that owns this connection
+  organization_id?: string;      // Optional: Organization/team identifier
+  provider: string;              // Provider config key from Nango
+  connection_id: string;         // Connection identifier in Nango
+  status: 'ACTIVE' | 'INACTIVE' | 'ERROR' | 'EXPIRED';
+  metadata?: Record<string, any>; // Additional custom data
+  created_at: string;
+  updated_at: string;
+}
+
 interface ConnectionService {
-  getConnections(): Promise<Connection[]>;
-  createConnection(provider: string, connectionId: string, metadata?: any): Promise<Connection>;
-  getConnection?(connectionId: string): Promise<Connection | null>; // Optional: for idempotent webhook handling
-  updateConnectionStatus(connectionId: string, status: ConnectionStatus): Promise<Connection>;
-  deleteConnection(connectionId: string): Promise<void>;
+  getConnections(filters?: Record<string, any>): Promise<Connection[]>;
+  createConnection(
+    provider: string,
+    connectionId: string,
+    ownerId: string,
+    organizationId?: string,
+    metadata?: Record<string, any>
+  ): Promise<Connection>;
+  getConnection?(connectionId: string): Promise<Connection | null>;
+  updateConnectionStatus(connectionId: string, status: Connection['status']): Promise<Connection>;
+  deleteConnection(connectionId: string): Promise<boolean>;
 }
 ```
 
 Your implementation determines:
-- How to identify the owner (user, team, organization)
+- How to extract the owner_id from your authentication system
 - Which database/ORM to use
-- What fields to store
-- How to handle authentication
+- How to handle multi-tenancy with organization_id
+- What additional metadata to store
 
 ### Database Adapter Examples
 
@@ -129,10 +169,17 @@ export const nangoConfig: NangoPluginConfig = {
           .select('*');
         return data || [];
       },
-      async createConnection(provider, connectionId, metadata) {
+      async createConnection(provider, connectionId, ownerId, organizationId, metadata) {
         const { data } = await supabase
           .from('nango_connections')
-          .insert({ provider, connection_id: connectionId, ...metadata })
+          .insert({
+            provider,
+            connection_id: connectionId,
+            owner_id: ownerId,
+            organization_id: organizationId,
+            metadata,
+            status: 'ACTIVE'
+          })
           .select()
           .single();
         return data;
@@ -159,9 +206,16 @@ export const nangoConfig: NangoPluginConfig = {
           where: { userId }
         });
       },
-      async createConnection(provider, connectionId, metadata) {
+      async createConnection(provider, connectionId, ownerId, organizationId, metadata) {
         return await prisma.nangoConnection.create({
-          data: { userId, provider, connectionId, ...metadata }
+          data: {
+            owner_id: ownerId,
+            organization_id: organizationId,
+            provider,
+            connection_id: connectionId,
+            metadata,
+            status: 'ACTIVE'
+          }
         });
       },
       // ... other methods
@@ -300,14 +354,16 @@ Your adapter must implement this interface:
 ```typescript
 interface ConnectionService {
   // Get all connections for the current context
-  // Optional metadata parameter for filtering
-  getConnections(metadata?: Record<string, any>): Promise<Connection[]>;
+  // Optional filters parameter for querying
+  getConnections(filters?: Record<string, any>): Promise<Connection[]>;
 
-  // Create a new connection record
+  // Create a new connection record with explicit ownership
   createConnection(
     provider: string,
     connectionId: string,
-    metadata?: any
+    ownerId: string,
+    organizationId?: string,
+    metadata?: Record<string, any>
   ): Promise<Connection>;
 
   // Update connection status

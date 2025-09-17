@@ -82,28 +82,28 @@ export async function handleWebhook(
           }
 
           // Create a new connection when auth succeeds
-          const metadata: Record<string, any> = {};
+          // Extract ownership information
+          const ownerId = event.endUser?.endUserId;
+          const organizationId = event.endUser?.organizationId;
 
-          // Add endUser data to metadata if available
-          if (event.endUser) {
-            if (event.endUser.endUserId) {
-              metadata.owner_id = event.endUser.endUserId;
-            }
-            if (event.endUser.organizationId) {
-              metadata.organization_id = event.endUser.organizationId;
-            }
+          if (!ownerId) {
+            console.error('No owner ID found in webhook event, skipping connection creation');
+            break;
           }
 
-          // Add environment if available
+          // Build metadata for additional information
+          const metadata: Record<string, any> = {};
           if (event.environment) {
             metadata.environment = event.environment;
           }
 
           try {
-            // Try to create the connection
+            // Try to create the connection with explicit ownership
             await connectionService.createConnection(
               event.providerConfigKey,
               event.connectionId,
+              ownerId,
+              organizationId,
               metadata
             );
           } catch (error) {

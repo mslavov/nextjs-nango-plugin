@@ -45,9 +45,9 @@ describe('handleWebhook', () => {
       expect(mockConnectionService.createConnection).toHaveBeenCalledWith(
         'slack-prod',
         'conn-123',
+        'user-123',
+        'org-456',
         {
-          owner_id: 'user-123',
-          organization_id: 'org-456',
           environment: 'production'
         }
       );
@@ -66,6 +66,7 @@ describe('handleWebhook', () => {
 
       mockConnectionService.getConnection.mockResolvedValue({
         id: 'db-id',
+        owner_id: 'user-123',
         connection_id: 'conn-existing',
         provider: 'github-prod',
         status: 'INACTIVE',
@@ -83,6 +84,30 @@ describe('handleWebhook', () => {
       expect(mockConnectionService.getConnection).toHaveBeenCalledWith('conn-existing');
       expect(mockConnectionService.createConnection).not.toHaveBeenCalled();
       expect(mockConnectionService.updateConnectionStatus).toHaveBeenCalledWith('conn-existing', 'ACTIVE');
+      expect(result).toEqual({ success: true, eventType: 'auth', operation: 'creation' });
+    });
+
+    it('skips creation when no owner_id is provided', async () => {
+      const event = {
+        type: 'auth',
+        operation: 'creation',
+        success: true,
+        connectionId: 'conn-no-owner',
+        providerConfigKey: 'slack-prod',
+        provider: 'slack',
+        // No endUser data
+      };
+
+      mockConnectionService.getConnection.mockResolvedValue(null);
+
+      const result = await handleWebhook(
+        JSON.stringify(event),
+        null,
+        mockConnectionService,
+        null
+      );
+
+      expect(mockConnectionService.createConnection).not.toHaveBeenCalled();
       expect(result).toEqual({ success: true, eventType: 'auth', operation: 'creation' });
     });
 
@@ -188,6 +213,9 @@ describe('handleWebhook', () => {
         connectionId: 'conn-333',
         providerConfigKey: 'slack-prod',
         provider: 'slack',
+        endUser: {
+          endUserId: 'user-333'
+        }
       };
       const body = JSON.stringify(event);
       const signature = crypto.createHmac('sha256', webhookSecret).update(body).digest('hex');
@@ -196,7 +224,13 @@ describe('handleWebhook', () => {
 
       const result = await handleWebhook(body, signature, mockConnectionService, webhookSecret);
 
-      expect(mockConnectionService.createConnection).toHaveBeenCalled();
+      expect(mockConnectionService.createConnection).toHaveBeenCalledWith(
+        'slack-prod',
+        'conn-333',
+        'user-333',
+        undefined,
+        {}
+      );
       expect(result).toEqual({ success: true, eventType: 'auth', operation: 'creation' });
     });
 
@@ -246,6 +280,9 @@ describe('handleWebhook', () => {
         connectionId: 'conn-666',
         providerConfigKey: 'slack-prod',
         provider: 'slack',
+        endUser: {
+          endUserId: 'user-666'
+        }
       };
       const body = JSON.stringify(event);
 
@@ -253,7 +290,13 @@ describe('handleWebhook', () => {
 
       const result = await handleWebhook(body, null, mockConnectionService, null);
 
-      expect(mockConnectionService.createConnection).toHaveBeenCalled();
+      expect(mockConnectionService.createConnection).toHaveBeenCalledWith(
+        'slack-prod',
+        'conn-666',
+        'user-666',
+        undefined,
+        {}
+      );
       expect(result).toEqual({ success: true, eventType: 'auth', operation: 'creation' });
     });
   });
@@ -308,6 +351,9 @@ describe('handleWebhook', () => {
         connectionId: 'conn-888',
         providerConfigKey: 'slack-prod',
         provider: 'slack',
+        endUser: {
+          endUserId: 'user-888'
+        }
       };
       const body = JSON.stringify(event);
 

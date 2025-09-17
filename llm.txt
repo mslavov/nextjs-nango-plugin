@@ -5,7 +5,7 @@ Next.js Nango Plugin is a comprehensive OAuth integration solution for Next.js a
 
 ## Package Information
 - **Name**: nextjs-nango-plugin
-- **Version**: 0.1.0
+- **Version**: 0.2.0
 - **Main**: dist/src/index.js
 - **Types**: dist/src/index.d.ts
 - **Repository**: https://github.com/mslavov/nextjs-nango-plugin
@@ -79,13 +79,14 @@ interface NangoPluginConfig {
 ```typescript
 interface Connection {
   id: string;                    // Unique database identifier
+  owner_id: string;              // Required: User/entity that owns this connection
+  organization_id?: string;      // Optional: Organization/team identifier
   provider: string;              // Provider config key from Nango (e.g., 'github-prod', 'slack')
   connection_id: string;         // Nango connection identifier
   status: 'ACTIVE' | 'INACTIVE' | 'ERROR' | 'EXPIRED';  // Connection state
-  metadata?: Record<string, any>; // Flexible metadata storage
+  metadata?: Record<string, any>; // Additional custom data (environment, etc.)
   created_at: string;            // ISO 8601 timestamp
   updated_at: string;            // ISO 8601 timestamp
-  last_sync_at?: string;         // Optional: Last successful sync timestamp
 }
 ```
 
@@ -93,14 +94,16 @@ interface Connection {
 ```typescript
 interface ConnectionService {
   // Retrieve all connections for current context
-  // Can filter by metadata fields
-  getConnections(metadata?: Record<string, any>): Promise<Connection[]>;
+  // Can filter by any field (owner_id, provider, status, etc.)
+  getConnections(filters?: Record<string, any>): Promise<Connection[]>;
 
-  // Create new connection record
+  // Create new connection record with explicit ownership
   createConnection(
     provider: string,          // Provider config key from Nango
-    connectionId: string,
-    metadata?: Record<string, any>
+    connectionId: string,      // Nango connection ID
+    ownerId: string,           // Owner identifier
+    organizationId?: string,   // Optional org/team ID
+    metadata?: Record<string, any> // Additional custom data
   ): Promise<Connection>;
 
   // Optional: Get single connection by ID (for idempotent webhook handling)
@@ -113,7 +116,7 @@ interface ConnectionService {
   ): Promise<Connection>;
 
   // Delete connection record
-  deleteConnection(connectionId: string): Promise<void>;
+  deleteConnection(connectionId: string): Promise<boolean>;
 }
 ```
 
@@ -131,17 +134,19 @@ const handler = createNangoHandler(nangoConfig);
 Retrieve user connections.
 
 Query Parameters:
-- Any metadata field for filtering (e.g., `?owner_id=123&team_id=456`)
+- Any field for filtering via metadata prefix (e.g., `?metadata.environment=production`)
 
 Response:
 ```json
 [
   {
     "id": "conn_123",
+    "owner_id": "user_123",
+    "organization_id": "org_456",
     "provider": "github",
     "connection_id": "nango_conn_456",
     "status": "ACTIVE",
-    "metadata": { "owner_id": "user_123" },
+    "metadata": { "environment": "production" },
     "created_at": "2024-01-01T00:00:00Z",
     "updated_at": "2024-01-01T00:00:00Z"
   }
@@ -469,15 +474,15 @@ createConnectionService: async (request) => {
         }
       });
     },
-    async createConnection(provider, connectionId, metadata) {
+    async createConnection(provider, connectionId, ownerId, organizationId, metadata) {
       return await db.connections.create({
         data: {
           provider,
           connection_id: connectionId,
-          owner_id: userId,
-          team_id: teamId,
-          organization_id: orgId,
-          ...metadata
+          owner_id: ownerId,
+          organization_id: organizationId,
+          metadata,
+          status: 'ACTIVE'
         }
       });
     }
@@ -527,10 +532,10 @@ The plugin passes NextRequest to createConnectionService, enabling:
 - Request-specific database connections
 
 ### Metadata Flexibility
-Connection metadata supports any structure:
+Connection metadata supports any additional custom data:
 ```typescript
 metadata: {
-  owner_id: 'user_123',
+  environment: 'production',
   team_id: 'team_456',
   organization_id: 'org_789',
   permissions: ['read', 'write'],
@@ -581,9 +586,11 @@ class MockConnectionService implements ConnectionService {
     return Array.from(this.connections.values());
   }
 
-  async createConnection(provider, connectionId, metadata) {
+  async createConnection(provider, connectionId, ownerId, organizationId, metadata) {
     const connection: Connection = {
       id: `mock_${Date.now()}`,
+      owner_id: ownerId,
+      organization_id: organizationId,
       provider,
       connection_id: connectionId,
       status: 'ACTIVE',

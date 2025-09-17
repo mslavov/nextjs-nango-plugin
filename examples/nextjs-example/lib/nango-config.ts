@@ -11,12 +11,24 @@ import { createNangoHandler, type NangoPluginConfig, type ConnectionService, typ
 const connections = new Map<string, Connection>();
 
 class InMemoryConnectionService implements ConnectionService {
-  constructor(private userId: string) {}
+  constructor(private userId: string, private organizationId?: string) {}
 
-  async getConnections(): Promise<Connection[]> {
+  async getConnections(filters?: Record<string, any>): Promise<Connection[]> {
     const userConnections: Connection[] = [];
     for (const conn of connections.values()) {
+      // Check ownership
       if (conn.owner_id === this.userId) {
+        // Apply additional filters if provided
+        if (filters) {
+          let matches = true;
+          for (const [key, value] of Object.entries(filters)) {
+            if ((conn as any)[key] !== value) {
+              matches = false;
+              break;
+            }
+          }
+          if (!matches) continue;
+        }
         userConnections.push(conn);
       }
     }
@@ -26,12 +38,15 @@ class InMemoryConnectionService implements ConnectionService {
   async createConnection(
     provider: string,
     connectionId: string,
+    ownerId: string,
+    organizationId?: string,
     metadata?: Record<string, any>
   ): Promise<Connection> {
     const id = `conn_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
     const connection: Connection = {
       id,
-      owner_id: this.userId,
+      owner_id: ownerId,
+      organization_id: organizationId,
       provider,
       connection_id: connectionId,
       status: 'ACTIVE',
@@ -87,8 +102,9 @@ export const nangoConfig: NangoPluginConfig = {
     // Extract user ID from request (in a real app, this would come from your auth system)
     // For demo, we'll use a hardcoded user ID that matches the one in integrations/page.tsx
     const userId = 'user-123'; // In production, get this from cookies/JWT/session
+    const organizationId = undefined; // Optional: get from your auth system if using multi-tenancy
 
-    return new InMemoryConnectionService(userId);
+    return new InMemoryConnectionService(userId, organizationId);
   },
 
   // Nango configuration

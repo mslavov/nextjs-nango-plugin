@@ -69,9 +69,13 @@ export default function IntegrationsPage() {
 
   return (
     <ConnectionManager
-      ownerId={user.id}
-      ownerEmail={user.email}
-      ownerName={user.name}
+      sessionData={{
+        end_user: {
+          id: user.id,
+          email: user.email,
+          display_name: user.name
+        }
+      }}
       providers={['github', 'notion', 'slack']} // Optional: auto-fetches if not provided
       onConnectionUpdate={() => {
         console.log('Connection updated!');
@@ -218,16 +222,21 @@ Main component for managing OAuth connections.
 
 ```tsx
 interface ConnectionManagerProps {
-  ownerId: string;               // Primary owner ID
-  secondaryOwnerId?: string;     // Optional secondary owner
-  ownerEmail?: string;           // User email for display
-  ownerName?: string;            // User name for display
+  sessionData?: {                // Session data for Nango Connect
+    end_user: {
+      id: string;                // Required: User identifier
+      email?: string;            // Optional: User email
+      display_name?: string;     // Optional: Display name
+    };
+    organization?: {             // Optional: Organization context
+      id: string;
+      display_name?: string;
+    };
+  };
   providers?: string[];          // List of providers (auto-fetches if not provided)
   onConnectionUpdate?: () => void; // Callback on connection change
   apiEndpoint?: string;          // API endpoint (default: '/api/nango')
   className?: string;            // Additional CSS classes
-  showHeader?: boolean;          // Show/hide header (default: true)
-  showDescription?: boolean;     // Show/hide descriptions (default: true)
 }
 ```
 
@@ -290,7 +299,8 @@ Your adapter must implement this interface:
 ```typescript
 interface ConnectionService {
   // Get all connections for the current context
-  getConnections(): Promise<Connection[]>;
+  // Optional metadata parameter for filtering
+  getConnections(metadata?: Record<string, any>): Promise<Connection[]>;
 
   // Create a new connection record
   createConnection(
@@ -330,7 +340,13 @@ The plugin automatically works with ANY provider configured in Nango - no code c
 ### 2. Use immediately in your app
 ```tsx
 <ConnectionManager
-  ownerId={userId}
+  sessionData={{
+    end_user: {
+      id: userId,
+      email: userEmail,
+      display_name: userName
+    }
+  }}
   providers={[
     'github',           // Standard providers
     'notion',
@@ -482,6 +498,7 @@ See the `/examples` directory for complete implementations:
 - [GitHub Issues](https://github.com/mslavov/nextjs-nango-plugin/issues)
 - [Documentation](https://github.com/mslavov/nextjs-nango-plugin/wiki)
 - [Discussions](https://github.com/mslavov/nextjs-nango-plugin/discussions)
+- [LLM Documentation](./llm.txt) - Comprehensive documentation for AI/LLM usage
 
 ## Acknowledgments
 

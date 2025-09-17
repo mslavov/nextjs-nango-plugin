@@ -51,18 +51,22 @@ describe('NangoService', () => {
       };
       mockNangoClient.createConnectSession.mockResolvedValue(mockResponse as any);
 
-      const result = await service.createSession('user-123', 'org-456', 'slack', 'user@example.com');
-
-      expect(mockNangoClient.createConnectSession).toHaveBeenCalledWith({
+      const sessionData = {
         end_user: {
           id: 'user-123',
           email: 'user@example.com',
+          display_name: 'John Doe',
         },
         organization: {
           id: 'org-456',
+          display_name: 'Acme Corp',
         },
         allowed_integrations: ['slack'],
-      });
+      };
+
+      const result = await service.createSession(sessionData);
+
+      expect(mockNangoClient.createConnectSession).toHaveBeenCalledWith(sessionData);
 
       expect(result).toEqual({
         sessionToken: 'session-token-123',
@@ -70,7 +74,7 @@ describe('NangoService', () => {
       });
     });
 
-    it('creates session without optional parameters', async () => {
+    it('creates session with minimal parameters', async () => {
       const mockResponse = {
         data: {
           token: 'session-token-456',
@@ -79,18 +83,15 @@ describe('NangoService', () => {
       };
       mockNangoClient.createConnectSession.mockResolvedValue(mockResponse as any);
 
-      const result = await service.createSession('user-789', 'org-012');
-
-      expect(mockNangoClient.createConnectSession).toHaveBeenCalledWith({
+      const sessionData = {
         end_user: {
           id: 'user-789',
-          email: 'user-789@app.local',
         },
-        organization: {
-          id: 'org-012',
-        },
-        allowed_integrations: undefined,
-      });
+      };
+
+      const result = await service.createSession(sessionData);
+
+      expect(mockNangoClient.createConnectSession).toHaveBeenCalledWith(sessionData);
 
       expect(result).toEqual({
         sessionToken: 'session-token-456',
@@ -183,36 +184,4 @@ describe('NangoService', () => {
     });
   });
 
-  describe('triggerSync', () => {
-    it('triggers sync with custom sync name', async () => {
-      const mockSyncResult = { sync_id: 'sync-123' };
-      mockNangoClient.triggerSync.mockResolvedValue(mockSyncResult as any);
-
-      const result = await service.triggerSync('conn-123', 'slack', 'custom-sync');
-
-      expect(mockNangoClient.triggerSync).toHaveBeenCalledWith('slack', ['custom-sync'], 'conn-123');
-      expect(result).toEqual(mockSyncResult);
-    });
-
-    it('triggers sync with default sync name', async () => {
-      const mockSyncResult = { sync_id: 'sync-456' };
-      mockNangoClient.triggerSync.mockResolvedValue(mockSyncResult as any);
-
-      const result = await service.triggerSync('conn-123', 'github');
-
-      expect(mockNangoClient.triggerSync).toHaveBeenCalledWith('github', ['default'], 'conn-123');
-      expect(result).toEqual(mockSyncResult);
-    });
-
-    it('returns null when sync fails', async () => {
-      mockNangoClient.triggerSync.mockRejectedValue(new Error('Sync failed'));
-
-      const consoleSpy = jest.spyOn(console, 'error').mockImplementation();
-      const result = await service.triggerSync('conn-123', 'slack');
-
-      expect(result).toBeNull();
-      expect(consoleSpy).toHaveBeenCalledWith('Failed to trigger sync:', expect.any(Error));
-      consoleSpy.mockRestore();
-    });
-  });
 });

@@ -1,5 +1,5 @@
 import { NangoPluginConfig } from './lib/types/config';
-import { NangoService } from './lib/nango/client';
+import { NangoService, NangoSessionData } from './lib/nango/client';
 import { handleWebhook } from './lib/webhooks/handler';
 
 // Type definitions for Next.js without importing from next/server
@@ -31,8 +31,28 @@ export function createNangoHandler(config: NangoPluginConfig) {
             // Use injected ConnectionService
             const service = await config.createConnectionService(request);
 
-            // The service implementation will determine ownership from the request
-            const connections = await service.getConnections();
+            // Extract metadata filters from query parameters
+            const url = new URL(request.url);
+            const metadata: Record<string, any> = {};
+
+            // Parse query parameters that start with 'metadata.' as filters
+            // Example: ?metadata.owner_id=user123&metadata.team_id=team456
+            url.searchParams.forEach((value, key) => {
+              if (key.startsWith('metadata.')) {
+                const metadataKey = key.substring('metadata.'.length);
+                // Try to parse as JSON for complex values, otherwise use as string
+                try {
+                  metadata[metadataKey] = JSON.parse(value);
+                } catch {
+                  metadata[metadataKey] = value;
+                }
+              }
+            });
+
+            // Pass metadata filters to getConnections
+            const connections = await service.getConnections(
+              Object.keys(metadata).length > 0 ? metadata : undefined
+            );
             return jsonResponse(connections);
           }
 
@@ -73,18 +93,43 @@ export function createNangoHandler(config: NangoPluginConfig) {
           case 'auth/session': {
             const data = await request.json() as any;
 
-            // Use provided session data or fallback to defaults
-            // The component passes whatever session data is needed
-            const userId = data.id || data.userId || 'default-user';
-            const orgId = data.organizationId || data.orgId || userId;
-            const email = data.email || `${userId}@app.local`;
+            // Validate required fields
+            if (!data.end_user?.id) {
+              return jsonResponse(
+                { error: 'end_user.id is required' },
+                { status: 400 }
+              );
+            }
 
-            const session = await nango.createSession(
-              userId,
-              orgId,
-              data.integrationId,
-              email
-            );
+            // Build session data matching Nango's API signature
+            const sessionData: NangoSessionData = {
+              end_user: {
+                id: data.end_user.id,
+              }
+            };
+
+            // Only add optional end_user fields if provided
+            if (data.end_user.email) {
+              sessionData.end_user.email = data.end_user.email;
+            }
+            if (data.end_user.display_name) {
+              sessionData.end_user.display_name = data.end_user.display_name;
+            }
+
+            // Only add organization if provided
+            if (data.organization && data.organization.id) {
+              sessionData.organization = { id: data.organization.id };
+              if (data.organization.display_name) {
+                sessionData.organization.display_name = data.organization.display_name;
+              }
+            }
+
+            // Only add allowed_integrations if provided
+            if (data.allowed_integrations) {
+              sessionData.allowed_integrations = data.allowed_integrations;
+            }
+
+            const session = await nango.createSession(sessionData);
             return jsonResponse(session);
           }
 

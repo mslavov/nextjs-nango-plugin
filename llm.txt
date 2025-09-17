@@ -1,0 +1,767 @@
+# Next.js Nango Plugin - Complete LLM Documentation
+
+## Overview
+Next.js Nango Plugin is a comprehensive OAuth integration solution for Next.js applications that provides seamless third-party API connections through Nango. It uses dependency injection to work with any database system and supports flexible ownership models (user, team, organization).
+
+## Package Information
+- **Name**: nextjs-nango-plugin
+- **Version**: 0.0.1
+- **Main**: dist/src/index.js
+- **Types**: dist/src/index.d.ts
+- **Repository**: https://github.com/mslavov/nextjs-nango-plugin
+- **License**: MIT
+
+## Core Features
+1. Zero-config OAuth integration setup
+2. Database-agnostic architecture via dependency injection
+3. Universal ownership model (user/team/org)
+4. Dynamic provider support (any Nango-configured provider)
+5. Automatic webhook handling with signature verification
+6. Production-ready React components
+7. Interactive CLI for setup
+8. Full TypeScript support
+9. Comprehensive test coverage
+
+## Installation & Quick Start
+
+### Installation
+```bash
+npm install nextjs-nango-plugin
+```
+
+### CLI Initialization
+```bash
+npx nextjs-nango-plugin init
+```
+
+Options:
+- `--database <type>`: supabase | prisma | custom
+- `--path <path>`: API route path (default: /api/nango)
+- `--skip-env`: Skip .env.local file creation
+
+## Complete Interface Documentation
+
+### Main Exports (src/index.ts)
+```typescript
+export { ConnectionManager } from './components/ConnectionManager';
+export { IntegrationCard } from './components/IntegrationCard';
+export { NangoService } from './lib/nango/client';
+export { createNangoHandler } from './handler';
+export { handleWebhook } from './lib/webhooks/handler';
+export type { ConnectionService, Connection } from './lib/types/connection-service';
+export type { NangoPluginConfig } from './lib/types/config';
+```
+
+### Core Configuration Interface
+
+#### NangoPluginConfig
+```typescript
+interface NangoPluginConfig {
+  // Factory function to create ConnectionService instances
+  // Can access request context for authentication
+  createConnectionService: (request?: NextRequest) => Promise<ConnectionService> | ConnectionService;
+
+  // Nango API configuration
+  nango: {
+    secretKey: string;           // Required: Nango secret key
+    host?: string;               // Optional: API host (default: 'https://api.nango.dev')
+    webhookSecret?: string;      // Optional: For webhook signature verification
+  };
+
+  // Optional: Restrict available providers
+  providers?: string[];          // If not specified, all Nango providers are available
+}
+```
+
+### Connection Data Model
+
+#### Connection Interface
+```typescript
+interface Connection {
+  id: string;                    // Unique database identifier
+  provider: string;              // Provider key (e.g., 'github', 'slack')
+  connection_id: string;         // Nango connection identifier
+  status: 'ACTIVE' | 'INACTIVE' | 'ERROR' | 'EXPIRED';  // Connection state
+  metadata?: Record<string, any>; // Flexible metadata storage
+  created_at: string;            // ISO 8601 timestamp
+  updated_at: string;            // ISO 8601 timestamp
+  last_sync_at?: string;         // Optional: Last successful sync timestamp
+}
+```
+
+### ConnectionService Interface (Required Implementation)
+```typescript
+interface ConnectionService {
+  // Retrieve all connections for current context
+  // Can filter by metadata fields
+  getConnections(metadata?: Record<string, any>): Promise<Connection[]>;
+
+  // Create new connection record
+  createConnection(
+    provider: string,
+    connectionId: string,
+    metadata?: Record<string, any>
+  ): Promise<Connection>;
+
+  // Update connection status
+  updateConnectionStatus(
+    connectionId: string,
+    status: 'ACTIVE' | 'INACTIVE' | 'ERROR' | 'EXPIRED'
+  ): Promise<Connection>;
+
+  // Delete connection record
+  deleteConnection(connectionId: string): Promise<void>;
+}
+```
+
+## API Endpoints
+
+### Handler Creation
+```typescript
+import { createNangoHandler } from 'nextjs-nango-plugin';
+const handler = createNangoHandler(nangoConfig);
+```
+
+### REST API Routes
+
+#### GET /api/nango/connections
+Retrieve user connections.
+
+Query Parameters:
+- Any metadata field for filtering (e.g., `?owner_id=123&team_id=456`)
+
+Response:
+```json
+[
+  {
+    "id": "conn_123",
+    "provider": "github",
+    "connection_id": "nango_conn_456",
+    "status": "ACTIVE",
+    "metadata": { "owner_id": "user_123" },
+    "created_at": "2024-01-01T00:00:00Z",
+    "updated_at": "2024-01-01T00:00:00Z"
+  }
+]
+```
+
+#### GET /api/nango/integrations
+List available OAuth providers from Nango.
+
+Response:
+```json
+[
+  {
+    "unique_key": "github",
+    "provider": "github",
+    "display_name": "GitHub",
+    "logo": "https://...",
+    "auth_mode": "OAUTH2"
+  }
+]
+```
+
+#### POST /api/nango/auth/session
+Create Nango Connect session for OAuth flow.
+
+Request Body:
+```json
+{
+  "end_user": {
+    "id": "user_123",           // Required
+    "email": "user@example.com", // Optional
+    "display_name": "John Doe"   // Optional
+  },
+  "organization": {              // Optional
+    "id": "org_456",
+    "display_name": "Acme Corp"
+  },
+  "allowed_integrations": ["github", "slack"] // Optional
+}
+```
+
+Response:
+```json
+{
+  "token": "nango_session_token_xxx"
+}
+```
+
+#### POST /api/nango/connections
+Create new connection record after OAuth success.
+
+Request Body:
+```json
+{
+  "provider": "github",
+  "connectionId": "nango_conn_123",
+  "metadata": {
+    "owner_id": "user_123",
+    "team_id": "team_456"
+  }
+}
+```
+
+#### PUT /api/nango/connections/{connectionId}
+Update connection status.
+
+Request Body:
+```json
+{
+  "status": "ACTIVE" | "INACTIVE" | "ERROR" | "EXPIRED"
+}
+```
+
+#### DELETE /api/nango/connections/{connectionId}
+Delete connection from both database and Nango.
+
+#### POST /api/nango/webhooks
+Handle Nango webhook events.
+
+Headers:
+- `X-Nango-Signature`: HMAC SHA-256 signature (if webhook secret configured)
+
+Webhook Events Handled:
+- `auth.success`: Sets status to ACTIVE
+- `auth.error`: Sets status to ERROR
+- `connection.deleted`: Sets status to INACTIVE
+- `sync.success`: Updates last_sync_at, sets status to ACTIVE
+- `sync.error`: Sets status to ERROR
+
+## React Components
+
+### ConnectionManager Component
+Main UI component for managing OAuth connections.
+
+```typescript
+interface ConnectionManagerProps {
+  // Session data for Nango Connect
+  sessionData?: {
+    end_user: {
+      id: string;                // Required: User identifier
+      email?: string;            // Optional: User email
+      display_name?: string;     // Optional: Display name
+    };
+    organization?: {             // Optional: Organization context
+      id: string;
+      display_name?: string;
+    };
+  };
+
+  providers?: string[];          // Optional: Filter available providers
+  onConnectionUpdate?: () => void; // Callback when connections change
+  apiEndpoint?: string;          // API base path (default: '/api/nango')
+  className?: string;            // CSS classes for styling
+}
+```
+
+Features:
+- Automatic provider fetching from Nango
+- OAuth flow handling via Nango Connect
+- Real-time connection status updates
+- Loading and error states
+- Responsive design
+
+### IntegrationCard Component
+Individual provider card with connection management.
+
+```typescript
+interface IntegrationCardProps {
+  provider: string;              // Provider key (e.g., 'github')
+  connection?: {
+    status: 'ACTIVE' | 'INACTIVE' | 'ERROR' | 'EXPIRED';
+    lastSync?: string;          // ISO timestamp
+  };
+  onConnect: () => void;        // Connect button handler
+  onDisconnect?: () => void;    // Disconnect button handler
+  isConnecting: boolean;        // Loading state
+}
+```
+
+Features:
+- Automatic provider metadata (name, logo)
+- Status indicators with color coding
+- Connect/Reconnect/Disconnect actions
+- Last sync timestamp display
+
+## Services
+
+### NangoService Class
+Client for Nango API operations.
+
+```typescript
+class NangoService {
+  constructor(secretKey: string, host?: string);
+
+  // Create OAuth session token
+  async createSession(data: {
+    end_user: { id: string; email?: string; display_name?: string };
+    organization?: { id: string; display_name?: string };
+    allowed_integrations?: string[];
+  }): Promise<{ token: string }>;
+
+  // List configured integrations
+  async listIntegrations(): Promise<Integration[]>;
+
+  // Get connection details
+  async getConnection(
+    connectionId: string,
+    providerConfigKey: string
+  ): Promise<NangoConnection>;
+
+  // Delete connection from Nango
+  async deleteConnection(
+    connectionId: string,
+    providerConfigKey?: string
+  ): Promise<void>;
+}
+```
+
+## Webhook Handler
+Automatic webhook processing with signature verification.
+
+```typescript
+async function handleWebhook(
+  request: Request,
+  config: NangoPluginConfig,
+  connectionService: ConnectionService
+): Promise<Response>
+```
+
+Supported Events:
+- `auth.success`: OAuth authorization successful
+- `auth.error`: OAuth authorization failed
+- `connection.deleted`: Connection removed
+- `sync.success`: Data sync completed
+- `sync.error`: Data sync failed
+
+## Database Adapter Examples
+
+### Supabase Adapter
+```typescript
+createConnectionService: async (request) => {
+  const token = request?.headers.get('authorization')?.replace('Bearer ', '');
+  const supabase = createClient(SUPABASE_URL, SUPABASE_KEY, {
+    global: { headers: { Authorization: `Bearer ${token}` } }
+  });
+
+  return {
+    async getConnections(metadata) {
+      const query = supabase.from('nango_connections').select('*');
+      if (metadata) {
+        Object.entries(metadata).forEach(([key, value]) => {
+          query.eq(key, value);
+        });
+      }
+      const { data } = await query;
+      return data || [];
+    },
+    // ... other methods
+  };
+};
+```
+
+### Prisma Adapter
+```typescript
+createConnectionService: async (request) => {
+  const session = await getServerSession(authOptions);
+  const userId = session?.user?.id;
+
+  return {
+    async getConnections() {
+      return await prisma.nangoConnection.findMany({
+        where: { userId }
+      });
+    },
+    // ... other methods
+  };
+};
+```
+
+### MongoDB Adapter
+```typescript
+createConnectionService: async (request) => {
+  const client = new MongoClient(MONGODB_URI);
+  const db = client.db('myapp');
+  const userId = await getUserIdFromRequest(request);
+
+  return {
+    async getConnections() {
+      return await db.collection('connections')
+        .find({ userId })
+        .toArray();
+    },
+    // ... other methods
+  };
+};
+```
+
+## Environment Variables
+```bash
+# Nango Configuration
+NANGO_SECRET_KEY=your-nango-secret-key        # Required
+NANGO_WEBHOOK_SECRET=your-webhook-secret      # Recommended for production
+NANGO_HOST=https://api.nango.dev             # Optional: Custom Nango instance
+
+# Database (example for Supabase)
+NEXT_PUBLIC_SUPABASE_URL=your-supabase-url
+NEXT_PUBLIC_SUPABASE_ANON_KEY=your-anon-key
+SUPABASE_SERVICE_ROLE_KEY=your-service-key
+```
+
+## Usage Examples
+
+### Basic Implementation
+```typescript
+// 1. Configure plugin (lib/nango-config.ts)
+export const nangoConfig: NangoPluginConfig = {
+  createConnectionService: async (request) => {
+    // Your database adapter
+    return new YourConnectionService(request);
+  },
+  nango: {
+    secretKey: process.env.NANGO_SECRET_KEY!,
+    webhookSecret: process.env.NANGO_WEBHOOK_SECRET
+  }
+};
+
+// 2. Create API routes (app/api/nango/[[...path]]/route.ts)
+import { createNangoHandler } from 'nextjs-nango-plugin';
+import { nangoConfig } from '@/lib/nango-config';
+
+const handler = createNangoHandler(nangoConfig);
+export const { GET, POST, PUT, DELETE } = handler;
+
+// 3. Use in your app
+import { ConnectionManager } from 'nextjs-nango-plugin';
+
+export default function IntegrationsPage() {
+  const user = await getUser();
+
+  return (
+    <ConnectionManager
+      sessionData={{
+        end_user: {
+          id: user.id,
+          email: user.email,
+          display_name: user.name
+        }
+      }}
+      providers={['github', 'slack', 'notion']}
+      onConnectionUpdate={() => console.log('Updated!')}
+    />
+  );
+}
+```
+
+### Multi-Tenant Implementation
+```typescript
+// Support for team/organization ownership
+createConnectionService: async (request) => {
+  const { userId, teamId, orgId } = await getContext(request);
+
+  return {
+    async getConnections() {
+      return await db.connections.findMany({
+        where: {
+          OR: [
+            { owner_id: userId },
+            { team_id: teamId },
+            { organization_id: orgId }
+          ]
+        }
+      });
+    },
+    async createConnection(provider, connectionId, metadata) {
+      return await db.connections.create({
+        data: {
+          provider,
+          connection_id: connectionId,
+          owner_id: userId,
+          team_id: teamId,
+          organization_id: orgId,
+          ...metadata
+        }
+      });
+    }
+    // ... other methods
+  };
+};
+```
+
+### Custom Provider Configuration
+```typescript
+// Limit available providers
+export const nangoConfig: NangoPluginConfig = {
+  providers: ['github', 'gitlab', 'bitbucket', 'custom-erp'],
+  // ... rest of config
+};
+
+// Or filter dynamically in component
+<ConnectionManager
+  sessionData={sessionData}
+  providers={user.plan === 'premium'
+    ? ['github', 'gitlab', 'slack', 'notion']
+    : ['github']}
+/>
+```
+
+### Webhook Security
+```typescript
+// Configure webhook secret for signature verification
+export const nangoConfig: NangoPluginConfig = {
+  nango: {
+    secretKey: process.env.NANGO_SECRET_KEY!,
+    webhookSecret: process.env.NANGO_WEBHOOK_SECRET  // HMAC-SHA256 verification
+  }
+};
+
+// Set webhook URL in Nango dashboard:
+// https://your-app.com/api/nango/webhooks
+```
+
+## Advanced Features
+
+### Request Context Usage
+The plugin passes NextRequest to createConnectionService, enabling:
+- Authentication via cookies/headers
+- User identification from JWT tokens
+- Multi-tenant context resolution
+- Request-specific database connections
+
+### Metadata Flexibility
+Connection metadata supports any structure:
+```typescript
+metadata: {
+  owner_id: 'user_123',
+  team_id: 'team_456',
+  organization_id: 'org_789',
+  permissions: ['read', 'write'],
+  custom_field: 'any_value',
+  tags: ['production', 'critical']
+}
+```
+
+### Query Filtering
+API supports metadata-based filtering:
+```
+GET /api/nango/connections?owner_id=123&team_id=456
+GET /api/nango/connections?status=ACTIVE&provider=github
+```
+
+### Error Handling
+All endpoints return consistent error responses:
+```json
+{
+  "error": "Error message",
+  "details": "Additional context"
+}
+```
+
+HTTP Status Codes:
+- 200: Success
+- 400: Bad Request (invalid parameters)
+- 401: Unauthorized (missing/invalid auth)
+- 404: Not Found
+- 500: Internal Server Error
+
+### Security Best Practices
+1. Always set NANGO_WEBHOOK_SECRET in production
+2. Implement proper authentication in createConnectionService
+3. Use Row Level Security (RLS) for database queries
+4. Validate all inputs with Zod schemas
+5. Never expose service keys to client
+6. Implement rate limiting on API routes
+
+## Testing Support
+
+### Mock ConnectionService
+```typescript
+class MockConnectionService implements ConnectionService {
+  private connections: Map<string, Connection> = new Map();
+
+  async getConnections() {
+    return Array.from(this.connections.values());
+  }
+
+  async createConnection(provider, connectionId, metadata) {
+    const connection: Connection = {
+      id: `mock_${Date.now()}`,
+      provider,
+      connection_id: connectionId,
+      status: 'ACTIVE',
+      metadata,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString()
+    };
+    this.connections.set(connection.id, connection);
+    return connection;
+  }
+  // ... other methods
+}
+```
+
+### Component Testing
+```typescript
+import { render, screen } from '@testing-library/react';
+import { ConnectionManager } from 'nextjs-nango-plugin';
+
+test('renders connection manager', () => {
+  render(
+    <ConnectionManager
+      sessionData={{
+        end_user: { id: 'test_user' }
+      }}
+      providers={['github']}
+    />
+  );
+
+  expect(screen.getByText(/github/i)).toBeInTheDocument();
+});
+```
+
+## Performance Considerations
+
+### Caching Strategy
+- Components use SWR for automatic caching and revalidation
+- Connection lists are cached with 30-second revalidation
+- Provider metadata is cached for session duration
+
+### Optimization Tips
+1. Implement database connection pooling
+2. Use database indexes on connection_id and metadata fields
+3. Implement pagination for large connection lists
+4. Use React.memo for IntegrationCard components
+5. Enable webhook deduplication in production
+
+## Migration Guide
+
+### From Manual OAuth Implementation
+1. Install the plugin
+2. Implement ConnectionService for your database
+3. Replace OAuth routes with plugin handlers
+4. Update UI to use ConnectionManager component
+5. Configure webhooks in Nango dashboard
+
+### Database Schema Example
+```sql
+CREATE TABLE nango_connections (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  provider VARCHAR(50) NOT NULL,
+  connection_id VARCHAR(255) NOT NULL UNIQUE,
+  status VARCHAR(20) NOT NULL DEFAULT 'ACTIVE',
+  owner_id VARCHAR(255),
+  team_id VARCHAR(255),
+  organization_id VARCHAR(255),
+  metadata JSONB,
+  last_sync_at TIMESTAMP,
+  created_at TIMESTAMP DEFAULT NOW(),
+  updated_at TIMESTAMP DEFAULT NOW(),
+
+  INDEX idx_connection_id (connection_id),
+  INDEX idx_owner_id (owner_id),
+  INDEX idx_status (status)
+);
+```
+
+## Troubleshooting
+
+### Common Issues
+
+1. **Connections not showing**: Check ConnectionService implementation returns correct data
+2. **OAuth fails**: Verify Nango configuration and callback URLs
+3. **Webhooks not processing**: Check webhook secret and signature
+4. **TypeScript errors**: Ensure all interfaces are properly implemented
+5. **Database errors**: Verify connection string and permissions
+
+### Debug Mode
+Enable debug logging:
+```typescript
+if (process.env.NODE_ENV === 'development') {
+  console.log('Nango Config:', nangoConfig);
+  console.log('Connection Service:', connectionService);
+}
+```
+
+## Provider Support
+Works with ANY OAuth provider configured in Nango:
+
+### Standard Providers
+- GitHub, GitLab, Bitbucket
+- Google (Drive, Calendar, Gmail)
+- Microsoft (Azure, Teams, OneDrive)
+- Slack, Discord, Zoom
+- Notion, Linear, Jira
+- Salesforce, HubSpot, Stripe
+- And 250+ more
+
+### Custom Providers
+Configure any OAuth2/OAuth1 provider in Nango dashboard and use immediately.
+
+## Dependencies
+
+### Runtime Dependencies
+- @nangohq/frontend: ^0.67.8 (Nango Connect UI)
+- @nangohq/node: ^0.67.8 (Nango API client)
+- zod: ^4.1.9 (Schema validation)
+
+### Peer Dependencies
+- next: ^15.5.3
+- react: ^19.1.1
+
+### Development Dependencies
+- TypeScript: ^5.9.2
+- Jest: ^30.1.3
+- React Testing Library: ^16.3.0
+
+## Architecture Patterns
+
+### Dependency Injection
+- Decouples database implementation from plugin logic
+- Enables testing with mock implementations
+- Supports multiple database backends simultaneously
+
+### Factory Pattern
+- createConnectionService factory enables request-time configuration
+- Allows dynamic service creation based on context
+
+### Adapter Pattern
+- ConnectionService interface adapts to any database
+- Consistent API regardless of underlying storage
+
+### Observer Pattern
+- Webhook handler acts as observer for Nango events
+- Automatic status updates based on external events
+
+## Best Practices
+
+### Production Checklist
+- [ ] Implement proper ConnectionService with real database
+- [ ] Set NANGO_WEBHOOK_SECRET environment variable
+- [ ] Configure webhook URL in Nango dashboard
+- [ ] Implement authentication in createConnectionService
+- [ ] Add error tracking (Sentry, etc.)
+- [ ] Set up monitoring for API endpoints
+- [ ] Implement rate limiting
+- [ ] Add database indexes for performance
+- [ ] Configure CORS if needed
+- [ ] Set up proper logging
+
+### Security Checklist
+- [ ] Validate all user inputs
+- [ ] Implement Row Level Security (RLS)
+- [ ] Use HTTPS for all endpoints
+- [ ] Rotate API keys regularly
+- [ ] Audit webhook payloads
+- [ ] Implement CSRF protection
+- [ ] Use secure session management
+- [ ] Validate connection ownership
+- [ ] Sanitize metadata fields
+- [ ] Implement request timeouts
+
+## Support & Resources
+- GitHub: https://github.com/mslavov/nextjs-nango-plugin
+- Issues: https://github.com/mslavov/nextjs-nango-plugin/issues
+- Wiki: https://github.com/mslavov/nextjs-nango-plugin/wiki
+- Nango Docs: https://docs.nango.dev
+- Next.js Docs: https://nextjs.org/docs

@@ -76,16 +76,17 @@ describe('ConnectionManager', () => {
             provider: 'google_drive',
             status: 'ACTIVE',
             connection_id: 'conn_123',
-            last_sync_at: '2024-01-15T10:00:00Z',
+            metadata: { owner_id: 'user-123' },
           },
         ],
       });
 
-    render(<ConnectionManager />);
+    render(<ConnectionManager sessionData={{
+      end_user: { id: 'user-123' }
+    }} />);
 
     await waitFor(() => {
       expect(screen.getByText('Connected')).toBeInTheDocument();
-      expect(screen.getByText(/Last synced:/)).toBeInTheDocument();
     });
   });
 
@@ -120,12 +121,18 @@ describe('ConnectionManager', () => {
             provider: 'slack',
             status: 'ACTIVE',
             connection_id: 'conn_456',
+            metadata: { owner_id: 'user-123' },
           },
         ],
       });
 
     const onConnectionUpdate = jest.fn();
-    render(<ConnectionManager onConnectionUpdate={onConnectionUpdate} />);
+    render(<ConnectionManager
+      sessionData={{
+        end_user: { id: 'user-123' }
+      }}
+      onConnectionUpdate={onConnectionUpdate}
+    />);
 
     await waitFor(() => {
       expect(screen.getByText('slack')).toBeInTheDocument();
@@ -152,6 +159,7 @@ describe('ConnectionManager', () => {
             provider: 'github',
             status: 'ACTIVE',
             connection_id: 'conn_789',
+            metadata: { owner_id: 'user-123' },
           },
         ],
       })
@@ -165,7 +173,10 @@ describe('ConnectionManager', () => {
       });
 
     const onConnectionUpdate = jest.fn();
-    render(<ConnectionManager onConnectionUpdate={onConnectionUpdate} />);
+    render(<ConnectionManager
+      sessionData={{ end_user: { id: 'user-123' } }}
+      onConnectionUpdate={onConnectionUpdate}
+    />);
 
     await waitFor(() => {
       expect(screen.getByText('Disconnect')).toBeInTheDocument();
@@ -240,7 +251,17 @@ describe('ConnectionManager', () => {
         json: async () => ({ sessionToken: 'test-token' }),
       });
 
-    const sessionData = { email: 'test@example.com', name: 'Test User' };
+    const sessionData = {
+      end_user: {
+        id: 'user-123',
+        email: 'test@example.com',
+        display_name: 'Test User'
+      },
+      organization: {
+        id: 'org-456',
+        display_name: 'Acme Corp'
+      }
+    };
     render(<ConnectionManager providers={['slack']} sessionData={sessionData} />);
 
     await waitFor(() => {
@@ -254,10 +275,31 @@ describe('ConnectionManager', () => {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          integrationId: 'slack',
           ...sessionData,
+          allowed_integrations: ['slack']
         }),
       });
+    });
+  });
+
+  it('shows error when session data is missing end_user.id', async () => {
+    (global.fetch as jest.Mock)
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => [],
+      });
+
+    // Session data without required end_user.id
+    render(<ConnectionManager providers={['github']} />);
+
+    await waitFor(() => {
+      expect(screen.getByText('Connect')).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByText('Connect'));
+
+    await waitFor(() => {
+      expect(screen.getByText(/Session data with end_user.id is required/)).toBeInTheDocument();
     });
   });
 });

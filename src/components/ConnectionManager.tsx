@@ -12,12 +12,17 @@ interface Connection {
 }
 
 interface ConnectionManagerProps {
-  // Optional session data for Nango
+  // Session data matching Nango's API structure
   sessionData?: {
-    email?: string;
-    name?: string;
-    // Any additional data needed for session creation
-    [key: string]: any;
+    end_user: {
+      id: string;
+      email?: string;
+      display_name?: string;
+    };
+    organization?: {
+      id: string;
+      display_name?: string;
+    };
   };
 
   providers?: string[]; // Optional: if not provided, fetches from Nango
@@ -90,14 +95,22 @@ export function ConnectionManager({
     setError(null);
 
     try {
+      // Validate that sessionData is provided with required fields
+      if (!sessionData?.end_user?.id) {
+        throw new Error('Session data with end_user.id is required');
+      }
+
+      // Build session request matching Nango's API
+      const sessionRequest = {
+        ...sessionData,
+        allowed_integrations: [providerId]
+      };
+
       // Get session token
       const res = await fetch(`${apiEndpoint}/auth/session`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          integrationId: providerId,
-          ...sessionData
-        })
+        body: JSON.stringify(sessionRequest)
       });
 
       if (!res.ok) {

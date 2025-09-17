@@ -34,14 +34,10 @@ describe('createNangoHandler', () => {
     jest.clearAllMocks();
 
     mockConnectionService = {
-      getConnection: jest.fn(),
-      saveConnection: jest.fn(),
-      listConnections: jest.fn(),
-      deleteConnection: jest.fn(),
-      updateConnectionStatus: jest.fn(),
-      updateLastSync: jest.fn(),
       getConnections: jest.fn(),
       createConnection: jest.fn(),
+      updateConnectionStatus: jest.fn(),
+      deleteConnection: jest.fn(),
     } as any;
 
     mockNangoService = {
@@ -74,7 +70,7 @@ describe('createNangoHandler', () => {
           connection_id: 'conn-1',
           provider: 'slack',
           status: 'ACTIVE' as const,
-          owner_id: 'user-1',
+          metadata: { owner_id: 'user-1' },
           created_at: '2024-01-01T00:00:00Z',
           updated_at: '2024-01-01T00:00:00Z'
         },
@@ -83,7 +79,7 @@ describe('createNangoHandler', () => {
           connection_id: 'conn-2',
           provider: 'github',
           status: 'ACTIVE' as const,
-          owner_id: 'user-1',
+          metadata: { owner_id: 'user-1' },
           created_at: '2024-01-01T00:00:00Z',
           updated_at: '2024-01-01T00:00:00Z'
         },
@@ -91,6 +87,7 @@ describe('createNangoHandler', () => {
       mockConnectionService.getConnections.mockResolvedValue(mockConnections);
 
       const mockRequest = {
+        url: 'http://localhost/api/nango/connections',
         headers: new Map(),
       } as any;
 
@@ -101,7 +98,40 @@ describe('createNangoHandler', () => {
       const data = await response.json();
 
       expect(config.createConnectionService).toHaveBeenCalledWith(mockRequest);
-      expect(mockConnectionService.getConnections).toHaveBeenCalled();
+      expect(mockConnectionService.getConnections).toHaveBeenCalledWith(undefined);
+      expect(data).toEqual(mockConnections);
+    });
+
+    it('handles /connections endpoint with metadata filters', async () => {
+      const mockConnections = [
+        {
+          id: 'id-1',
+          connection_id: 'conn-1',
+          provider: 'slack',
+          status: 'ACTIVE' as const,
+          metadata: { owner_id: 'user-1', team_id: 'team-1' },
+          created_at: '2024-01-01T00:00:00Z',
+          updated_at: '2024-01-01T00:00:00Z'
+        },
+      ];
+      mockConnectionService.getConnections.mockResolvedValue(mockConnections);
+
+      const mockRequest = {
+        url: 'http://localhost/api/nango/connections?metadata.owner_id=user-1&metadata.team_id=team-1',
+        headers: new Map(),
+      } as any;
+
+      const response = await handler.GET(mockRequest, {
+        params: { path: ['connections'] },
+      });
+
+      const data = await response.json();
+
+      expect(config.createConnectionService).toHaveBeenCalledWith(mockRequest);
+      expect(mockConnectionService.getConnections).toHaveBeenCalledWith({
+        owner_id: 'user-1',
+        team_id: 'team-1'
+      });
       expect(data).toEqual(mockConnections);
     });
 
@@ -140,7 +170,10 @@ describe('createNangoHandler', () => {
     it('handles errors gracefully', async () => {
       mockConnectionService.getConnections.mockRejectedValue(new Error('Database error'));
 
-      const mockRequest = {} as any;
+      const mockRequest = {
+        url: 'http://localhost/api/nango/connections',
+        headers: new Map(),
+      } as any;
 
       const response = await handler.GET(mockRequest, {
         params: { path: ['connections'] },
@@ -188,10 +221,16 @@ describe('createNangoHandler', () => {
 
     it('handles /auth/session endpoint', async () => {
       const sessionData = {
-        id: 'user-123',
-        email: 'user@example.com',
-        organizationId: 'org-456',
-        integrationId: 'slack',
+        end_user: {
+          id: 'user-123',
+          email: 'user@example.com',
+          display_name: 'John Doe'
+        },
+        organization: {
+          id: 'org-456',
+          display_name: 'Acme Corp'
+        },
+        allowed_integrations: ['slack']
       };
 
       const mockRequest = {
@@ -209,12 +248,7 @@ describe('createNangoHandler', () => {
 
       const data = await response.json();
 
-      expect(mockNangoService.createSession).toHaveBeenCalledWith(
-        'user-123',
-        'org-456',
-        'slack',
-        'user@example.com'
-      );
+      expect(mockNangoService.createSession).toHaveBeenCalledWith(sessionData);
       expect(data).toEqual({
         sessionToken: 'token-123',
         expiresAt: '2024-01-15T10:00:00Z',
@@ -237,7 +271,7 @@ describe('createNangoHandler', () => {
         connection_id: 'conn-new',
         provider: 'slack',
         status: 'ACTIVE' as const,
-        owner_id: 'user-1',
+        metadata: { owner_id: 'user-1', team: 'engineering' },
         created_at: '2024-01-01T00:00:00Z',
         updated_at: '2024-01-01T00:00:00Z'
       };
@@ -258,28 +292,26 @@ describe('createNangoHandler', () => {
       expect(data).toEqual(mockConnection);
     });
 
-    it('uses default values for session when data is missing', async () => {
-      const sessionData = {};
+    it('returns error when required end_user.id is missing', async () => {
+      const sessionData = {
+        organization: {
+          id: 'org-456'
+        }
+      };
 
       const mockRequest = {
         json: jest.fn().mockResolvedValue(sessionData),
       } as any;
 
-      mockNangoService.createSession.mockResolvedValue({
-        sessionToken: 'token-456',
-        expiresAt: '2024-01-16T10:00:00Z',
-      });
-
-      await handler.POST(mockRequest, {
+      const response = await handler.POST(mockRequest, {
         params: { path: ['auth', 'session'] },
       });
 
-      expect(mockNangoService.createSession).toHaveBeenCalledWith(
-        'default-user',
-        'default-user',
-        undefined,
-        'default-user@app.local'
-      );
+      const data = await response.json();
+
+      expect(response.status).toBe(400);
+      expect(data).toEqual({ error: 'end_user.id is required' });
+      expect(mockNangoService.createSession).not.toHaveBeenCalled();
     });
   });
 
@@ -296,7 +328,7 @@ describe('createNangoHandler', () => {
         connection_id: 'conn-123',
         provider: 'slack',
         status: 'ACTIVE' as const,
-        owner_id: 'user-1',
+        metadata: { owner_id: 'user-1' },
         created_at: '2024-01-01T00:00:00Z',
         updated_at: '2024-01-01T00:00:00Z'
       };
@@ -419,13 +451,16 @@ describe('createNangoHandler', () => {
         connection_id: 'conn-1',
         provider: 'slack',
         status: 'ACTIVE' as const,
-        owner_id: 'user-1',
+        metadata: { owner_id: 'user-1' },
         created_at: '2024-01-01T00:00:00Z',
         updated_at: '2024-01-01T00:00:00Z'
       }];
       mockConnectionService.getConnections.mockResolvedValue(mockConnections);
 
-      const mockRequest = {} as any;
+      const mockRequest = {
+        url: 'http://localhost/api/nango/connections',
+        headers: new Map(),
+      } as any;
 
       const response = await handler.GET(mockRequest, {
         params: Promise.resolve({ path: ['connections'] }),

@@ -57,16 +57,6 @@ class InMemoryConnectionService implements ConnectionService {
     throw new Error('Connection not found');
   }
 
-  async updateLastSync(connectionId: string): Promise<Connection> {
-    for (const conn of connections.values()) {
-      if (conn.connection_id === connectionId && conn.owner_id === this.userId) {
-        conn.last_sync_at = new Date().toISOString();
-        conn.updated_at = new Date().toISOString();
-        return conn;
-      }
-    }
-    throw new Error('Connection not found');
-  }
 
   async deleteConnection(connectionId: string): Promise<boolean> {
     for (const [id, conn] of connections.entries()) {

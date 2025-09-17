@@ -68,11 +68,6 @@ class MyConnectionService implements ConnectionService {
     throw new Error('updateConnectionStatus not implemented');
   }
 
-  async updateLastSync(connectionId: string) {
-    // Implement your database update here
-    throw new Error('updateLastSync not implemented');
-  }
-
   async deleteConnection(connectionId: string) {
     // Implement your database delete here
     throw new Error('deleteConnection not implemented');

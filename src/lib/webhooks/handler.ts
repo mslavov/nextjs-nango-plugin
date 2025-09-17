@@ -69,8 +69,7 @@ export async function handleWebhook(
         break;
 
       case 'sync.success':
-        // Update last sync timestamp
-        await connectionService.updateLastSync(event.connectionId);
+        // Ensure active status after successful sync
         await connectionService.updateConnectionStatus(event.connectionId, 'ACTIVE');
         break;
 

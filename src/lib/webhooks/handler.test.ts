@@ -12,7 +12,6 @@ describe('handleWebhook', () => {
       createConnection: jest.fn(),
       deleteConnection: jest.fn(),
       updateConnectionStatus: jest.fn(),
-      updateLastSync: jest.fn(),
     };
   });
 
@@ -94,7 +93,6 @@ describe('handleWebhook', () => {
         null
       );
 
-      expect(mockConnectionService.updateLastSync).toHaveBeenCalledWith('conn-111');
       expect(mockConnectionService.updateConnectionStatus).toHaveBeenCalledWith('conn-111', 'ACTIVE');
       expect(result).toEqual({ success: true, eventType: 'sync.success' });
     });

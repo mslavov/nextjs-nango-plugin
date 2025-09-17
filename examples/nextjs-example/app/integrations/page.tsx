@@ -8,17 +8,20 @@ export default function IntegrationsPage() {
 
   useEffect(() => {
     // TODO: Replace this with your actual session/user data logic
-    // The session data should match what your ConnectionService implementation expects
     // For example, get it from your auth provider (NextAuth, Clerk, Supabase Auth, etc.)
 
-    // Example session data - adapt to your needs:
+    // Session data must match Nango's API structure:
     setSessionData({
-      id: 'user-123',
-      email: 'user@example.com',
-      name: 'John Doe',
-      // Add any other fields your implementation needs
-      // organizationId: 'org-456',
-      // teamId: 'team-789',
+      end_user: {
+        id: 'user-123',  // Required
+        email: 'user@example.com',  // Optional
+        display_name: 'John Doe'  // Optional
+      },
+      // Optional organization info
+      organization: {
+        id: 'org-456',
+        display_name: 'Acme Corp'
+      }
     });
   }, []);
 

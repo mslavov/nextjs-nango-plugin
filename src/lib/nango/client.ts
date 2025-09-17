@@ -1,5 +1,18 @@
 import { Nango } from '@nangohq/node';
 
+export interface NangoSessionData {
+  end_user: {
+    id: string;
+    email?: string;
+    display_name?: string;
+  };
+  organization?: {
+    id: string;
+    display_name?: string;
+  };
+  allowed_integrations?: string[];
+}
+
 export class NangoService {
   private client: Nango;
 
@@ -10,20 +23,9 @@ export class NangoService {
     });
   }
 
-  // Create a session for the Connect UI
-  async createSession(userId: string, organizationId: string, integrationId?: string, userEmail?: string) {
-    const allowedIntegrations = integrationId ? [integrationId] : undefined;
-
-    const response = await this.client.createConnectSession({
-      end_user: {
-        id: userId,
-        email: userEmail || `${userId}@app.local`,
-      },
-      organization: {
-        id: organizationId,
-      },
-      allowed_integrations: allowedIntegrations,
-    });
+  // Create a session for the Connect UI - matches Nango's API signature
+  async createSession(sessionData: NangoSessionData) {
+    const response = await this.client.createConnectSession(sessionData);
 
     return {
       sessionToken: response.data.token,
@@ -37,7 +39,7 @@ export class NangoService {
     return integrations.configs.map((config: any) => ({
       id: config.unique_key,
       provider: config.provider,
-      // Add any other relevant fields
+      dispayName: config.dispayName
     }));
   }
 
@@ -63,21 +65,6 @@ export class NangoService {
     } catch (error) {
       console.error('Failed to delete connection:', error);
       return false;
-    }
-  }
-
-  // Trigger a sync
-  async triggerSync(connectionId: string, providerConfigKey: string, syncName?: string) {
-    try {
-      const result = await this.client.triggerSync(
-        providerConfigKey,
-        [syncName || 'default'],
-        connectionId
-      );
-      return result;
-    } catch (error) {
-      console.error('Failed to trigger sync:', error);
-      return null;
     }
   }
 }

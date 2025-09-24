@@ -1,5 +1,6 @@
 import { handleWebhook } from './handler';
 import type { ConnectionService } from '../types/connection-service';
+import type { SecretsService } from '../types/secrets-service';
 import crypto from 'crypto';
 
 describe('handleWebhook', () => {
@@ -62,6 +63,9 @@ describe('handleWebhook', () => {
         connectionId: 'conn-existing',
         providerConfigKey: 'github-prod',
         provider: 'github',
+        endUser: {
+          endUserId: 'user-123'
+        }
       };
 
       mockConnectionService.getConnection.mockResolvedValue({
@@ -343,7 +347,7 @@ describe('handleWebhook', () => {
       expect(mockConnectionService.updateConnectionStatus).not.toHaveBeenCalled();
     });
 
-    it('logs and re-throws service errors', async () => {
+    it('logs service errors but continues processing', async () => {
       const event = {
         type: 'auth',
         operation: 'creation',
@@ -368,17 +372,288 @@ describe('handleWebhook', () => {
       const consoleSpy = jest.spyOn(console, 'error').mockImplementation();
       const consoleLogSpy = jest.spyOn(console, 'log').mockImplementation();
 
-      await expect(
-        handleWebhook(body, null, mockConnectionService, null)
-      ).rejects.toThrow('Database error');
+      // Should NOT throw, but continue processing
+      const result = await handleWebhook(body, null, mockConnectionService, null);
 
+      expect(result).toEqual({ success: true, eventType: 'auth', operation: 'creation' });
+      expect(consoleLogSpy).toHaveBeenCalledWith(
+        'Failed to create connection conn-888:',
+        expect.any(Error)
+      );
       expect(consoleSpy).toHaveBeenCalledWith(
-        'Webhook processing failed:',
+        'Failed to update connection conn-888:',
         expect.any(Error)
       );
 
       consoleSpy.mockRestore();
       consoleLogSpy.mockRestore();
+    });
+  });
+});
+
+describe('handleWebhook with optional services', () => {
+  let mockSecretsService: jest.Mocked<SecretsService>;
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockSecretsService = {
+      storeSecret: jest.fn(),
+      getSecret: jest.fn(),
+      updateSecret: jest.fn(),
+      deleteSecret: jest.fn(),
+    } as any;
+  });
+
+  describe('without ConnectionService', () => {
+    it('processes auth event without storing connection', async () => {
+      const event = {
+        type: 'auth',
+        operation: 'creation',
+        success: true,
+        connectionId: 'conn-999',
+        providerConfigKey: 'slack-prod',
+        provider: 'slack',
+        endUser: {
+          endUserId: 'user-999'
+        }
+      };
+
+      const result = await handleWebhook(
+        JSON.stringify(event),
+        null,
+        null, // No ConnectionService
+        null
+      );
+
+      expect(result).toEqual({ success: true, eventType: 'auth', operation: 'creation' });
+    });
+
+    it('processes sync event without updating status', async () => {
+      const event = {
+        type: 'sync',
+        success: true,
+        connectionId: 'conn-1000',
+        providerConfigKey: 'github-prod',
+        provider: 'github',
+      };
+
+      const result = await handleWebhook(
+        JSON.stringify(event),
+        null,
+        null, // No ConnectionService
+        null
+      );
+
+      expect(result).toEqual({ success: true, eventType: 'sync', operation: undefined });
+    });
+
+    it('processes connection.deleted event without updating', async () => {
+      const event = {
+        type: 'connection.deleted',
+        connectionId: 'conn-1001',
+        providerConfigKey: 'notion-prod',
+        provider: 'notion',
+      };
+
+      const result = await handleWebhook(
+        JSON.stringify(event),
+        null,
+        null, // No ConnectionService
+        null
+      );
+
+      expect(result).toEqual({ success: true, eventType: 'connection.deleted', operation: undefined });
+    });
+  });
+
+  describe('with SecretsService', () => {
+    it('stores credentials on auth success when provided', async () => {
+      const event = {
+        type: 'auth',
+        operation: 'creation',
+        success: true,
+        connectionId: 'conn-2000',
+        providerConfigKey: 'slack-prod',
+        provider: 'slack',
+        endUser: {
+          endUserId: 'user-2000',
+          organizationId: 'org-2000'
+        },
+        data: {
+          credentials: {
+            type: 'OAUTH2',
+            access_token: 'token-abc',
+            refresh_token: 'refresh-xyz',
+            expires_at: '2025-01-01T00:00:00Z'
+          }
+        }
+      };
+
+      const result = await handleWebhook(
+        JSON.stringify(event),
+        null,
+        null, // No ConnectionService
+        null,
+        mockSecretsService
+      );
+
+      expect(mockSecretsService.storeSecret).toHaveBeenCalledWith(
+        'conn-2000',
+        'slack',
+        {
+          type: 'OAUTH2',
+          access_token: 'token-abc',
+          refresh_token: 'refresh-xyz',
+          expires_at: '2025-01-01T00:00:00Z'
+        },
+        'user-2000',
+        'org-2000'
+      );
+      expect(result).toEqual({ success: true, eventType: 'auth', operation: 'creation' });
+    });
+
+    it('deletes secret on connection deletion', async () => {
+      const event = {
+        type: 'connection.deleted',
+        connectionId: 'conn-2001',
+        providerConfigKey: 'github-prod',
+        provider: 'github',
+      };
+
+      mockSecretsService.deleteSecret.mockResolvedValue(true);
+
+      const result = await handleWebhook(
+        JSON.stringify(event),
+        null,
+        null, // No ConnectionService
+        null,
+        mockSecretsService
+      );
+
+      expect(mockSecretsService.deleteSecret).toHaveBeenCalledWith('conn-2001');
+      expect(result).toEqual({ success: true, eventType: 'connection.deleted', operation: undefined });
+    });
+
+    it('handles secret storage failure gracefully', async () => {
+      const event = {
+        type: 'auth',
+        operation: 'creation',
+        success: true,
+        connectionId: 'conn-2002',
+        providerConfigKey: 'slack-prod',
+        provider: 'slack',
+        endUser: {
+          endUserId: 'user-2002'
+        },
+        data: {
+          credentials: {
+            type: 'OAUTH2',
+            access_token: 'token-fail'
+          }
+        }
+      };
+
+      mockSecretsService.storeSecret.mockRejectedValue(new Error('Storage failed'));
+      const consoleSpy = jest.spyOn(console, 'error').mockImplementation();
+
+      const result = await handleWebhook(
+        JSON.stringify(event),
+        null,
+        null,
+        null,
+        mockSecretsService
+      );
+
+      expect(consoleSpy).toHaveBeenCalledWith('Failed to store credentials:', expect.any(Error));
+      expect(result).toEqual({ success: true, eventType: 'auth', operation: 'creation' });
+
+      consoleSpy.mockRestore();
+    });
+  });
+
+  describe('with both services', () => {
+    let mockConnectionService: jest.Mocked<ConnectionService>;
+
+    beforeEach(() => {
+      mockConnectionService = {
+        getConnections: jest.fn(),
+        createConnection: jest.fn(),
+        deleteConnection: jest.fn(),
+        updateConnectionStatus: jest.fn(),
+        getConnection: jest.fn(),
+      };
+    });
+
+    it('updates both connection and secrets on auth success', async () => {
+      const event = {
+        type: 'auth',
+        operation: 'creation',
+        success: true,
+        connectionId: 'conn-3000',
+        providerConfigKey: 'slack-prod',
+        provider: 'slack',
+        endUser: {
+          endUserId: 'user-3000',
+          organizationId: 'org-3000'
+        },
+        environment: 'production',
+        data: {
+          credentials: {
+            type: 'OAUTH2',
+            access_token: 'token-3000'
+          }
+        }
+      };
+
+      mockConnectionService.getConnection.mockResolvedValue(null);
+
+      const result = await handleWebhook(
+        JSON.stringify(event),
+        null,
+        mockConnectionService,
+        null,
+        mockSecretsService
+      );
+
+      expect(mockConnectionService.createConnection).toHaveBeenCalledWith(
+        'slack-prod',
+        'conn-3000',
+        'user-3000',
+        'org-3000',
+        { environment: 'production' }
+      );
+      expect(mockSecretsService.storeSecret).toHaveBeenCalledWith(
+        'conn-3000',
+        'slack',
+        { type: 'OAUTH2', access_token: 'token-3000' },
+        'user-3000',
+        'org-3000'
+      );
+      expect(result).toEqual({ success: true, eventType: 'auth', operation: 'creation' });
+    });
+
+    it('deletes both connection and secret on deletion', async () => {
+      const event = {
+        type: 'connection.deleted',
+        connectionId: 'conn-3001',
+        providerConfigKey: 'github-prod',
+        provider: 'github',
+      };
+
+      mockConnectionService.updateConnectionStatus.mockResolvedValue({} as any);
+      mockSecretsService.deleteSecret.mockResolvedValue(true);
+
+      const result = await handleWebhook(
+        JSON.stringify(event),
+        null,
+        mockConnectionService,
+        null,
+        mockSecretsService
+      );
+
+      expect(mockConnectionService.updateConnectionStatus).toHaveBeenCalledWith('conn-3001', 'INACTIVE');
+      expect(mockSecretsService.deleteSecret).toHaveBeenCalledWith('conn-3001');
+      expect(result).toEqual({ success: true, eventType: 'connection.deleted', operation: undefined });
     });
   });
 });

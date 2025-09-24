@@ -214,12 +214,13 @@ describe('createNangoHandler', () => {
 
       const data = await response.json();
 
-      expect(config.createConnectionService).toHaveBeenCalledWith();
+      expect(config.createConnectionService).toHaveBeenCalled();
       expect(handleWebhook).toHaveBeenCalledWith(
         webhookBody,
         'signature-123',
         mockConnectionService,
-        'webhook-secret'
+        'webhook-secret',
+        null // No SecretsService configured returns null
       );
       expect(data).toEqual({ success: true, eventType: 'auth.success' });
     });
@@ -466,6 +467,150 @@ describe('createNangoHandler', () => {
 
       expect(mockConnectionService.getConnections).toHaveBeenCalled();
       expect(data).toEqual(mockConnections);
+    });
+  });
+});
+
+describe('createNangoHandler with optional services', () => {
+  let mockNangoService: jest.Mocked<NangoService>;
+  let handler: ReturnType<typeof createNangoHandler>;
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+
+    mockNangoService = {
+      createSession: jest.fn(),
+      listIntegrations: jest.fn(),
+      getConnection: jest.fn(),
+      deleteConnection: jest.fn(),
+      triggerSync: jest.fn(),
+    } as any;
+
+    (NangoService as jest.MockedClass<typeof NangoService>).mockImplementation(() => mockNangoService);
+  });
+
+  describe('zero-config mode', () => {
+    beforeEach(() => {
+      const config: NangoPluginConfig = {
+        nango: {
+          secretKey: 'test-secret',
+          host: 'https://api.nango.dev',
+        },
+        // No services provided
+      };
+      handler = createNangoHandler(config);
+    });
+
+    it('handles /connections endpoint without ConnectionService', async () => {
+      const mockRequest = {
+        url: 'http://localhost/api/nango/connections',
+        headers: {
+          get: jest.fn().mockReturnValue(null)
+        },
+      } as any;
+
+      const response = await handler.GET(mockRequest, {
+        params: { path: ['connections'] },
+      });
+
+      const data = await response.json();
+      expect(response.status).toBe(200);
+      expect(data).toEqual([]);
+    });
+
+    it('handles /integrations endpoint by calling Nango API', async () => {
+      const mockIntegrations = [
+        { id: 'github', provider: 'github', displayName: 'GitHub' },
+        { id: 'slack', provider: 'slack', displayName: 'Slack' },
+      ];
+      mockNangoService.listIntegrations.mockResolvedValue(mockIntegrations);
+
+      const mockRequest = {
+        url: 'http://localhost/api/nango/integrations',
+        headers: {
+          get: jest.fn().mockReturnValue(null)
+        },
+      } as any;
+
+      const response = await handler.GET(mockRequest, {
+        params: { path: ['integrations'] },
+      });
+
+      const data = await response.json();
+      expect(response.status).toBe(200);
+      expect(mockNangoService.listIntegrations).toHaveBeenCalled();
+      expect(data).toEqual(mockIntegrations);
+    });
+
+    it('returns 501 for connection updates without service', async () => {
+      const mockRequest = {
+        url: 'http://localhost/api/nango/connections/conn-1',
+        headers: {
+          get: jest.fn().mockReturnValue(null)
+        },
+        json: jest.fn().mockResolvedValue({ status: 'INACTIVE' }),
+      } as any;
+
+      const response = await handler.PUT(mockRequest, {
+        params: { path: ['connections', 'conn-1'] },
+      });
+
+      const data = await response.json();
+      expect(response.status).toBe(501);
+      expect(data.error).toBe('ConnectionService required for updates');
+    });
+  });
+
+  describe('selective services mode', () => {
+    it('uses ConnectionService when provided but falls back for integrations', async () => {
+      const mockConnectionService = {
+        getConnections: jest.fn().mockResolvedValue([]),
+        createConnection: jest.fn(),
+        updateConnectionStatus: jest.fn(),
+        deleteConnection: jest.fn(),
+      } as any;
+
+      const config: NangoPluginConfig = {
+        nango: {
+          secretKey: 'test-secret',
+        },
+        createConnectionService: jest.fn().mockResolvedValue(mockConnectionService),
+        // No IntegrationService
+      };
+
+      handler = createNangoHandler(config);
+
+      // Test connections endpoint - should use service
+      const connRequest = {
+        url: 'http://localhost/api/nango/connections',
+        headers: {
+          get: jest.fn().mockReturnValue(null)
+        },
+      } as any;
+
+      await handler.GET(connRequest, {
+        params: { path: ['connections'] },
+      });
+
+      expect(mockConnectionService.getConnections).toHaveBeenCalled();
+
+      // Test integrations endpoint - should use Nango API
+      mockNangoService.listIntegrations.mockResolvedValue({
+        configs: [],
+      } as any);
+
+      const intRequest = {
+        url: 'http://localhost/api/nango/integrations',
+        headers: {
+          get: jest.fn().mockReturnValue(null)
+        },
+      } as any;
+
+      await handler.GET(intRequest, {
+        params: { path: ['integrations'] },
+      });
+
+      expect(mockNangoService.listIntegrations).toHaveBeenCalled();
     });
   });
 });

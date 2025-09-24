@@ -4,14 +4,15 @@ Seamless OAuth integration for Next.js apps using Nango with complete database f
 
 ## Features
 
-- 🔌 **Zero-config integration** - Set up OAuth in minutes with a single CLI command
+- 🚀 **Zero-config mode** - Start without any database - pure Nango API proxy
+- 🔌 **Optional services architecture** - Use only what you need, when you need it
 - 🎯 **Universal ownership model** - Adapter pattern works with any user/team/org structure
-- 🗄️ **Database agnostic** - Dependency injection supports any database (Supabase, Prisma, PostgreSQL, MongoDB, etc.)
+- 🗄️ **Database agnostic** - Optional dependency injection supports any database (Supabase, Prisma, PostgreSQL, MongoDB, etc.)
 - 🔄 **Dynamic provider support** - No hardcoded provider list - works with any Nango-configured provider
 - 🪝 **Automatic webhook handling** - Real-time connection status updates
 - 🎨 **Production-ready React components** - Beautiful, customizable connection management UI
 - 🛠️ **Interactive CLI** - Guided setup and configuration with automatic file generation
-- 🔒 **Security first** - Built-in RLS support, secure token handling, and webhook signature verification
+- 🔒 **Security first** - Built-in RLS support, secure token handling, webhook signature verification, and optional credential encryption
 - 📦 **Lightweight** - Minimal dependencies, tree-shakeable exports
 - 🧪 **Fully tested** - Comprehensive test coverage with Jest
 
@@ -22,6 +23,27 @@ npm install nextjs-nango-plugin
 ```
 
 ## Quick Start
+
+### Zero-Config Mode (NEW! 🚀)
+
+Get started in seconds without any database setup:
+
+```typescript
+import { createNangoHandler } from 'nextjs-nango-plugin';
+
+// app/api/nango/[...path]/route.ts
+export const handler = createNangoHandler({
+  nango: {
+    secretKey: process.env.NANGO_SECRET_KEY!
+  }
+});
+
+export const { GET, POST, PUT, DELETE } = handler;
+```
+
+That's it! You now have a working Nango integration.
+
+### Standard Setup
 
 ### 1. Initialize the plugin
 
@@ -36,10 +58,21 @@ This interactive CLI will:
 - Add required environment variables to `.env.local`
 - Create example integration pages based on your app structure
 
-### 2. Configure your database adapter
+### 2. Choose your configuration mode
 
-The plugin uses dependency injection, so you configure your database once in `/lib/nango-config.ts`:
+The plugin now supports multiple configuration modes with all services being optional:
 
+#### Zero-Config Mode (NEW! - No database required)
+```typescript
+// Simplest setup - pure Nango API proxy
+export const nangoConfig: NangoPluginConfig = {
+  nango: {
+    secretKey: process.env.NANGO_SECRET_KEY!,
+  },
+};
+```
+
+#### With Connection Tracking (Most common)
 ```typescript
 export const nangoConfig: NangoPluginConfig = {
   nango: {
@@ -47,7 +80,7 @@ export const nangoConfig: NangoPluginConfig = {
     webhookSecret: process.env.NANGO_WEBHOOK_SECRET,
   },
   createConnectionService: async (request?) => {
-    // Your database adapter implementation
+    // Your database adapter for tracking connections
     // The plugin works with ANY database through this interface
   },
 };
@@ -110,9 +143,62 @@ export default function IntegrationsPage() {
 
 ## Configuration
 
+### Optional Services Architecture (NEW in v0.3.0)
+
+All services are now optional with automatic Nango API fallback:
+
+#### Available Services
+
+1. **ConnectionService** (Optional)
+   - Tracks OAuth connections in your database
+   - Manages ownership and access control
+   - Falls back to Nango when not provided
+
+2. **IntegrationService** (Optional)
+   - Caches provider metadata locally
+   - Reduces API calls for better performance
+   - Falls back to Nango API when not provided
+
+3. **SecretsService** (Optional)
+   - Stores encrypted credentials locally
+   - Enables offline token refresh
+   - Falls back to Nango's secure storage when not provided
+
+#### Progressive Enhancement Pattern
+
+Start simple and add services as your needs grow:
+
+```typescript
+// 1. Start with zero-config
+const handler = createNangoHandler({
+  nango: { secretKey: process.env.NANGO_SECRET_KEY! }
+});
+
+// 2. Add connection tracking when needed
+const handler = createNangoHandler({
+  createConnectionService: async (req) => new MyConnectionService(req),
+  nango: { secretKey: process.env.NANGO_SECRET_KEY! }
+});
+
+// 3. Add integration caching for performance
+const handler = createNangoHandler({
+  createConnectionService: async (req) => new MyConnectionService(req),
+  createIntegrationService: async () => new CachedIntegrationService(),
+  nango: { secretKey: process.env.NANGO_SECRET_KEY! }
+});
+
+// 4. Add secure credential storage
+const handler = createNangoHandler({
+  createConnectionService: async (req) => new MyConnectionService(req),
+  createIntegrationService: async () => new CachedIntegrationService(),
+  createSecretsService: async (req) => new EncryptedSecretsService(req),
+  nango: { secretKey: process.env.NANGO_SECRET_KEY! }
+});
+```
+
 ### Dependency Injection Architecture
 
-The plugin uses a powerful dependency injection pattern that adapts to ANY database and ownership model through a single `ConnectionService` interface:
+When you need database storage, the plugin uses a powerful dependency injection pattern that adapts to ANY database and ownership model:
 
 ```typescript
 interface Connection {

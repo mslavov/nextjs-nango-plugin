@@ -7,4 +7,6 @@ export { createNangoHandler } from './handler';
 
 // Export types
 export type { ConnectionService, Connection } from './lib/types/connection-service';
-export type { NangoPluginConfig } from './lib/types/config';
+export type { IntegrationService, Integration } from './lib/types/integration-service';
+export type { SecretsService, ConnectionSecret, Credentials } from './lib/types/secrets-service';
+export type { NangoPluginConfig, ServiceFactory } from './lib/types/config';

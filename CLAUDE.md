@@ -19,13 +19,16 @@ In the `examples/nextjs-example` directory:
 
 ## Architecture Overview
 
-This is a Next.js plugin that provides seamless OAuth integration via Nango with database-agnostic architecture through dependency injection.
+This is a Next.js plugin that provides seamless OAuth integration via Nango with an optional services architecture. All services are optional with automatic Nango API fallback.
 
-### Core Design Pattern: Dependency Injection
-The plugin uses a factory pattern where users provide a `createConnectionService` function that returns a `ConnectionService` implementation. This allows complete flexibility in:
-- Database choice (Supabase, Prisma, MongoDB, any ORM)
-- Authentication method (NextAuth, Supabase Auth, custom)
-- Ownership model (user-based, team-based, organization-based)
+### Core Design Pattern: Optional Services with Fallback (v0.3.0+)
+The plugin now uses an optional services pattern where ALL services are optional:
+- **Zero-config mode**: No services required - pure Nango API proxy
+- **Progressive enhancement**: Add only the services you need
+- **Full flexibility**: When services are provided, they offer complete control over:
+  - Database choice (Supabase, Prisma, MongoDB, any ORM)
+  - Authentication method (NextAuth, Supabase Auth, custom)
+  - Ownership model (user-based, team-based, organization-based)
 
 ### Key Components
 
@@ -34,8 +37,10 @@ The plugin uses a factory pattern where users provide a `createConnectionService
 - Routes: `/api/nango/connections`, `/api/nango/integrations`, `/api/nango/auth/session`, `/api/nango/webhooks`
 - Injects request context to `createConnectionService` for auth extraction
 
-**Service Interfaces**
-- `ConnectionService` (`src/lib/types/connection-service.ts`) - Database operations interface that users implement
+**Service Interfaces** (All Optional)
+- `ConnectionService` (`src/lib/types/connection-service.ts`) - Database operations for connection tracking
+- `IntegrationService` (`src/lib/types/integration-service.ts`) - Caching for provider metadata
+- `SecretsService` (`src/lib/types/secrets-service.ts`) - Encrypted credential storage
 - `NangoService` (`src/lib/nango/client.ts`) - Wraps Nango API calls with proper typing
 
 **React Components**
@@ -62,7 +67,8 @@ Interactive setup wizard that:
 
 - The plugin avoids importing from `next/server` directly to maintain compatibility
 - Uses Web API Response objects for route handlers
-- All database operations go through the injected ConnectionService
+- All services are optional - automatic fallback to Nango API when not provided
+- Database operations go through the injected services when available
 - Provider list is dynamic - fetched from Nango, not hardcoded
 - Webhook signature verification is optional but recommended for production
 - When making changes to the plugin, make sure tests are updated as well, the llm.txt file and the README.md file.

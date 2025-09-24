@@ -5,22 +5,25 @@ Next.js Nango Plugin is a comprehensive OAuth integration solution for Next.js a
 
 ## Package Information
 - **Name**: nextjs-nango-plugin
-- **Version**: 0.2.0
+- **Version**: 0.3.0
 - **Main**: dist/src/index.js
 - **Types**: dist/src/index.d.ts
 - **Repository**: https://github.com/mslavov/nextjs-nango-plugin
 - **License**: MIT
 
 ## Core Features
-1. Zero-config OAuth integration setup
-2. Database-agnostic architecture via dependency injection
-3. Universal ownership model (user/team/org)
-4. Dynamic provider support (any Nango-configured provider)
-5. Automatic webhook handling with signature verification
-6. Production-ready React components
-7. Interactive CLI for setup
-8. Full TypeScript support
-9. Comprehensive test coverage
+1. **NEW: Zero-config mode** - No database required, pure Nango API proxy
+2. **NEW: Optional services architecture** - All services optional with automatic fallback
+3. Database-agnostic architecture via dependency injection (when needed)
+4. Universal ownership model (user/team/org)
+5. Dynamic provider support (any Nango-configured provider)
+6. Automatic webhook handling with signature verification
+7. Production-ready React components
+8. Interactive CLI for setup
+9. Full TypeScript support
+10. Comprehensive test coverage
+11. **NEW: Integration caching service** - Optional performance optimization
+12. **NEW: Secrets storage service** - Optional encrypted credential management
 
 ## Installation & Quick Start
 
@@ -49,19 +52,28 @@ export { NangoService } from './lib/nango/client';
 export { createNangoHandler } from './handler';
 export { handleWebhook } from './lib/webhooks/handler';
 export type { ConnectionService, Connection } from './lib/types/connection-service';
-export type { NangoPluginConfig } from './lib/types/config';
+export type { IntegrationService, Integration } from './lib/types/integration-service';
+export type { SecretsService, ConnectionSecret, Credentials } from './lib/types/secrets-service';
+export type { NangoPluginConfig, ServiceFactory } from './lib/types/config';
 ```
 
 ### Core Configuration Interface
 
-#### NangoPluginConfig
+#### NangoPluginConfig (v0.3.0 - All Services Optional)
 ```typescript
 interface NangoPluginConfig {
-  // Factory function to create ConnectionService instances
-  // Can access request context for authentication
-  createConnectionService: (request?: NextRequest) => Promise<ConnectionService> | ConnectionService;
+  // ALL SERVICES ARE NOW OPTIONAL - automatic Nango API fallback when not provided
 
-  // Nango API configuration
+  // Optional: Factory for ConnectionService (tracks connections in your database)
+  createConnectionService?: ServiceFactory<ConnectionService>;
+
+  // Optional: Factory for IntegrationService (caches provider metadata)
+  createIntegrationService?: ServiceFactory<IntegrationService>;
+
+  // Optional: Factory for SecretsService (stores encrypted credentials)
+  createSecretsService?: ServiceFactory<SecretsService>;
+
+  // Required: Nango API configuration
   nango: {
     secretKey: string;           // Required: Nango secret key
     host?: string;               // Optional: API host (default: 'https://api.nango.dev')
@@ -70,6 +82,88 @@ interface NangoPluginConfig {
 
   // Optional: Restrict available providers
   providers?: string[];          // If not specified, all Nango providers are available
+}
+
+// Service factory type
+type ServiceFactory<T> = (request?: NextRequest) => Promise<T> | T;
+```
+
+#### IntegrationService Interface (Optional - caches provider metadata)
+```typescript
+interface IntegrationService {
+  // Get all available integrations
+  getIntegrations(filters?: Record<string, any>): Promise<Integration[]>;
+
+  // Get a specific integration by provider key
+  getIntegration(providerKey: string): Promise<Integration | null>;
+
+  // Store/cache an integration
+  storeIntegration(integration: Integration): Promise<void>;
+
+  // Update an existing integration
+  updateIntegration(providerKey: string, data: Partial<Integration>): Promise<Integration>;
+
+  // Delete an integration
+  deleteIntegration(providerKey: string): Promise<boolean>;
+
+  // Optional: Sync integrations from Nango API
+  syncIntegrations?(): Promise<number>;
+
+  // Optional: Check if cache needs refresh
+  needsRefresh?(): Promise<boolean>;
+}
+
+interface Integration {
+  id: string;
+  provider: string;
+  unique_key: string;
+  display_name?: string;
+  logo_url?: string;
+  auth_mode: 'OAUTH2' | 'OAUTH1' | 'API_KEY' | 'BASIC' | 'CUSTOM';
+  scopes?: string[];
+  metadata?: Record<string, any>;
+  created_at: string;
+  updated_at: string;
+}
+```
+
+#### SecretsService Interface (Optional - manages credentials)
+```typescript
+interface SecretsService {
+  // Store credentials for a connection
+  storeSecret(
+    connectionId: string,
+    provider: string,
+    credentials: Credentials,
+    ownerId: string,
+    organizationId?: string
+  ): Promise<ConnectionSecret>;
+
+  // Retrieve credentials for a connection
+  getSecret(connectionId: string): Promise<ConnectionSecret | null>;
+
+  // Update credentials (e.g., after token refresh)
+  updateSecret(
+    connectionId: string,
+    credentials: Partial<Credentials>
+  ): Promise<ConnectionSecret>;
+
+  // Delete stored credentials
+  deleteSecret(connectionId: string): Promise<boolean>;
+
+  // Optional: Check if credentials need refresh
+  needsRefresh?(connectionId: string): Promise<boolean>;
+}
+
+interface Credentials {
+  type: 'OAUTH2' | 'OAUTH1' | 'API_KEY' | 'BASIC' | 'CUSTOM';
+  access_token?: string;
+  refresh_token?: string;
+  expires_at?: string;
+  api_key?: string;
+  username?: string;
+  password?: string;
+  raw?: Record<string, any>;
 }
 ```
 
@@ -90,7 +184,9 @@ interface Connection {
 }
 ```
 
-### ConnectionService Interface (Required Implementation)
+### Service Interfaces
+
+#### ConnectionService Interface (Optional - tracks connections)
 ```typescript
 interface ConnectionService {
   // Retrieve all connections for current context
@@ -413,7 +509,53 @@ SUPABASE_SERVICE_ROLE_KEY=your-service-key
 
 ## Usage Examples
 
-### Basic Implementation
+### Zero-Config Mode (NEW - No Database Required)
+```typescript
+// app/api/nango/[...path]/route.ts
+import { createNangoHandler } from 'nextjs-nango-plugin';
+
+// Simplest setup - pure Nango API proxy
+const handler = createNangoHandler({
+  nango: {
+    secretKey: process.env.NANGO_SECRET_KEY!
+  }
+});
+
+export const { GET, POST, PUT, DELETE } = handler;
+```
+
+### Progressive Enhancement
+```typescript
+// Start simple, add services as needed
+
+// 1. Start with zero-config
+let config = {
+  nango: { secretKey: process.env.NANGO_SECRET_KEY! }
+};
+
+// 2. Add connection tracking when needed
+config = {
+  ...config,
+  createConnectionService: async (req) => new MyConnectionService(req)
+};
+
+// 3. Add integration caching for performance
+config = {
+  ...config,
+  createIntegrationService: async () => new CachedIntegrationService()
+};
+
+// 4. Add secure credential storage
+config = {
+  ...config,
+  createSecretsService: async (req) => new EncryptedSecretsService(req)
+};
+
+const handler = createNangoHandler(config);
+export const { GET, POST, PUT, DELETE } = handler;
+```
+
+### Standard Implementation (With Database)
 ```typescript
 // 1. Configure plugin (lib/nango-config.ts)
 export const nangoConfig: NangoPluginConfig = {

@@ -1,6 +1,9 @@
 import { NangoPluginConfig } from './lib/types/config';
 import { NangoService, NangoSessionData } from './lib/nango/client';
 import { handleWebhook } from './lib/webhooks/handler';
+import type { ConnectionService } from './lib/types/connection-service';
+import type { IntegrationService } from './lib/types/integration-service';
+import type { SecretsService } from './lib/types/secrets-service';
 
 // Type definitions for Next.js without importing from next/server
 type NextRequest = any;
@@ -20,6 +23,30 @@ export function createNangoHandler(config: NangoPluginConfig) {
     });
   };
 
+  // Helper functions to get optional services
+  const getConnectionService = async (request?: NextRequest): Promise<ConnectionService | null> => {
+    if (!config.createConnectionService) return null;
+    return await config.createConnectionService(request);
+  };
+
+  const getIntegrationService = async (request?: NextRequest): Promise<IntegrationService | null> => {
+    if (!config.createIntegrationService) return null;
+    return await config.createIntegrationService(request);
+  };
+
+  const getSecretsService = async (request?: NextRequest): Promise<SecretsService | null> => {
+    if (!config.createSecretsService) return null;
+    return await config.createSecretsService(request);
+  };
+
+  // Extract auth context for zero-config mode
+  const extractAuthContext = (request: NextRequest) => {
+    // Try to extract user/org from headers (can be customized)
+    const userId = request.headers.get?.('x-user-id') || 'anonymous';
+    const organizationId = request.headers.get?.('x-organization-id') || undefined;
+    return { userId, organizationId };
+  };
+
   return {
     GET: async (request: NextRequest, context?: { params?: { path?: string[] } | Promise<{ path?: string[] }> }) => {
       const params = context?.params ? await context.params : undefined;
@@ -28,40 +55,83 @@ export function createNangoHandler(config: NangoPluginConfig) {
       try {
         switch (path) {
           case 'connections': {
-            // Use injected ConnectionService
-            const service = await config.createConnectionService(request);
+            // Get optional ConnectionService
+            const service = await getConnectionService(request);
 
-            // Extract metadata filters from query parameters
-            const url = new URL(request.url);
-            const metadata: Record<string, any> = {};
+            if (service) {
+              // Use local ConnectionService
+              const url = new URL(request.url);
+              const metadata: Record<string, any> = {};
 
-            // Parse query parameters that start with 'metadata.' as filters
-            // Example: ?metadata.owner_id=user123&metadata.team_id=team456
-            url.searchParams.forEach((value, key) => {
-              if (key.startsWith('metadata.')) {
-                const metadataKey = key.substring('metadata.'.length);
-                // Try to parse as JSON for complex values, otherwise use as string
-                try {
-                  metadata[metadataKey] = JSON.parse(value);
-                } catch {
-                  metadata[metadataKey] = value;
+              // Parse query parameters that start with 'metadata.' as filters
+              // Example: ?metadata.owner_id=user123&metadata.team_id=team456
+              url.searchParams.forEach((value, key) => {
+                if (key.startsWith('metadata.')) {
+                  const metadataKey = key.substring('metadata.'.length);
+                  // Try to parse as JSON for complex values, otherwise use as string
+                  try {
+                    metadata[metadataKey] = JSON.parse(value);
+                  } catch {
+                    metadata[metadataKey] = value;
+                  }
                 }
-              }
-            });
+              });
 
-            // Pass metadata filters to getConnections
-            const connections = await service.getConnections(
-              Object.keys(metadata).length > 0 ? metadata : undefined
-            );
-            return jsonResponse(connections);
+              // Pass metadata filters to getConnections
+              const connections = await service.getConnections(
+                Object.keys(metadata).length > 0 ? metadata : undefined
+              );
+              return jsonResponse(connections);
+            } else {
+              // Fallback to Nango API - connections are managed by Nango
+              // In zero-config mode, we can list connections but they're not stored locally
+              const { userId } = extractAuthContext(request);
+
+              // Note: Nango doesn't have a direct list connections API
+              // In zero-config mode, connections are only accessible via Nango's dashboard
+              // Return empty array as we don't store connections locally
+              console.log('ConnectionService not configured - connections managed by Nango');
+              return jsonResponse([]);
+            }
           }
 
           case 'integrations': {
-            const integrations = await nango.listIntegrations();
-            return jsonResponse(integrations);
+            // Get optional IntegrationService
+            const service = await getIntegrationService(request);
+
+            if (service) {
+              // Use local IntegrationService (cached data)
+              const integrations = await service.getIntegrations();
+              return jsonResponse(integrations);
+            } else {
+              // Fallback to Nango API
+              const integrations = await nango.listIntegrations();
+              return jsonResponse(integrations);
+            }
           }
 
           default:
+            // Handle connection-specific routes
+            if (path.startsWith('connections/') && path.endsWith('/credentials')) {
+              const connectionId = path.split('/')[1];
+              const secretsService = await getSecretsService(request);
+
+              if (secretsService) {
+                // Try to get from local storage
+                const secret = await secretsService.getSecret(connectionId);
+                if (secret) {
+                  return jsonResponse(secret.credentials);
+                }
+              }
+
+              // Fallback: would need to get from Nango, but requires provider key
+              // In practice, this would need additional context
+              return jsonResponse(
+                { error: 'Credentials not available without SecretsService or provider context' },
+                { status: 501 }
+              );
+            }
+
             return jsonResponse({ error: 'Not found' }, { status: 404 });
         }
       } catch (error: any) {
@@ -80,13 +150,22 @@ export function createNangoHandler(config: NangoPluginConfig) {
       try {
         switch (path) {
           case 'webhooks': {
-            // Use injected ConnectionService for webhooks (no request)
-            const service = await config.createConnectionService();
+            // Get optional services for webhook handling
+            const connectionService = await getConnectionService();
+            const secretsService = await getSecretsService();
 
             const body = await request.text();
             const signature = request.headers.get('x-nango-signature');
             const webhookSecret = config.nango.webhookSecret || null;
-            const result = await handleWebhook(body, signature, service, webhookSecret);
+
+            // Pass both services to webhook handler (both optional)
+            const result = await handleWebhook(
+              body,
+              signature,
+              connectionService,
+              webhookSecret,
+              secretsService
+            );
             return jsonResponse(result);
           }
 
@@ -154,7 +233,15 @@ export function createNangoHandler(config: NangoPluginConfig) {
         // Handle connection status updates
         if (path.startsWith('connections/')) {
           const connectionId = path.split('/')[1];
-          const service = await config.createConnectionService(request);
+          const service = await getConnectionService(request);
+
+          if (!service) {
+            return jsonResponse(
+              { error: 'ConnectionService required for updates' },
+              { status: 501 }
+            );
+          }
+
           const data = await request.json() as any;
 
           if (data.status) {
@@ -183,7 +270,7 @@ export function createNangoHandler(config: NangoPluginConfig) {
         // Handle connection deletion
         if (path.startsWith('connections/')) {
           const connectionId = path.split('/')[1];
-          const service = await config.createConnectionService(request);
+          const service = await getConnectionService(request);
 
           // Get providerConfigKey from request body
           const data = await request.json() as any;
@@ -197,8 +284,10 @@ export function createNangoHandler(config: NangoPluginConfig) {
             }
           }
 
-          // Delete from our database
-          await service.deleteConnection(connectionId);
+          // Delete from local database if service exists
+          if (service) {
+            await service.deleteConnection(connectionId);
+          }
 
           return jsonResponse({ success: true });
         }

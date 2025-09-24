@@ -7,6 +7,8 @@ description: Bump version, publish to npm, and push to git
 
 This command handles the complete release process for the nextjs-nango-plugin package.
 
+Additional instructions: $ARGUMENTS
+
 ## What it does:
 1. Determines the version bump type (patch, minor, major) based on changes
 2. Updates version in package.json

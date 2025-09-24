@@ -1,110 +1,103 @@
-import { createNangoHandler, type NangoPluginConfig, type ConnectionService, type Connection } from 'nextjs-nango-plugin';
+import { createNangoHandler, type NangoPluginConfig } from 'nextjs-nango-plugin';
+
+// Import example service implementations
+import { InMemoryConnectionService } from './services/connection';
+import { InMemoryIntegrationService } from './services/integration';
+import { InMemorySecretsService } from './services/secrets';
 
 /**
- * Example ConnectionService implementation using in-memory storage
+ * Nango Plugin Configuration Examples
  *
- * WARNING: This is for demonstration purposes only!
- * In production, implement this with your actual database.
+ * This file demonstrates different configuration patterns:
+ * 1. Zero-config mode (no database required)
+ * 2. Selective services (only what you need)
+ * 3. Full implementation (all services)
  */
 
-// In-memory storage (will reset on server restart)
-const connections = new Map<string, Connection>();
+// Helper function to extract user context from request
+// In production, this would integrate with your auth system
+const getUserContext = async (request?: any) => {
+  // For demo, we'll use a hardcoded user ID
+  // In production, extract from cookies/JWT/session
+  const userId = 'user-123';
+  const organizationId = undefined; // Optional for multi-tenancy
 
-class InMemoryConnectionService implements ConnectionService {
-  constructor(private userId: string, private organizationId?: string) {}
-
-  async getConnections(filters?: Record<string, any>): Promise<Connection[]> {
-    const userConnections: Connection[] = [];
-    for (const conn of connections.values()) {
-      // Check ownership
-      if (conn.owner_id === this.userId) {
-        // Apply additional filters if provided
-        if (filters) {
-          let matches = true;
-          for (const [key, value] of Object.entries(filters)) {
-            if ((conn as any)[key] !== value) {
-              matches = false;
-              break;
-            }
-          }
-          if (!matches) continue;
-        }
-        userConnections.push(conn);
-      }
-    }
-    return userConnections;
-  }
-
-  async createConnection(
-    provider: string,
-    connectionId: string,
-    ownerId: string,
-    organizationId?: string,
-    metadata?: Record<string, any>
-  ): Promise<Connection> {
-    const id = `conn_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
-    const connection: Connection = {
-      id,
-      owner_id: ownerId,
-      organization_id: organizationId,
-      provider,
-      connection_id: connectionId,
-      status: 'ACTIVE',
-      metadata,
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-    };
-    connections.set(id, connection);
-    return connection;
-  }
-
-  async updateConnectionStatus(
-    connectionId: string,
-    status: Connection['status']
-  ): Promise<Connection> {
-    for (const conn of connections.values()) {
-      if (conn.connection_id === connectionId && conn.owner_id === this.userId) {
-        conn.status = status;
-        conn.updated_at = new Date().toISOString();
-        return conn;
-      }
-    }
-    throw new Error('Connection not found');
-  }
-
-
-  async deleteConnection(connectionId: string): Promise<boolean> {
-    for (const [id, conn] of connections.entries()) {
-      if (conn.connection_id === connectionId && conn.owner_id === this.userId) {
-        connections.delete(id);
-        return true;
-      }
-    }
-    return false;
-  }
-}
+  return { userId, organizationId };
+};
 
 /**
- * Nango Plugin Configuration
- *
- * IMPORTANT: You must implement the ConnectionService factory below.
- * This factory should return an instance of your ConnectionService implementation.
+ * EXAMPLE 1: Zero-Config Mode (Simplest)
+ * No database required - pure Nango API proxy
+ * Uncomment to use this mode
+ */
+// export const nangoConfig: NangoPluginConfig = {
+//   nango: {
+//     secretKey: process.env.NANGO_SECRET_KEY!,
+//     host: process.env.NANGO_HOST || 'https://api.nango.dev',
+//   },
+// };
+
+/**
+ * EXAMPLE 2: Connection Service Only (Common Pattern)
+ * Store connections locally, fetch integrations from API
+ * Uncomment to use this mode
+ */
+// export const nangoConfig: NangoPluginConfig = {
+//   createConnectionService: async (request) => {
+//     const { userId, organizationId } = await getUserContext(request);
+//     return new InMemoryConnectionService(userId, organizationId);
+//   },
+//   nango: {
+//     secretKey: process.env.NANGO_SECRET_KEY!,
+//     host: process.env.NANGO_HOST || 'https://api.nango.dev',
+//     webhookSecret: process.env.NANGO_WEBHOOK_SECRET,
+//   },
+// };
+
+/**
+ * EXAMPLE 3: With Integration Caching
+ * Cache integration metadata to reduce API calls
+ * Uncomment to use this mode
+ */
+// export const nangoConfig: NangoPluginConfig = {
+//   createConnectionService: async (request) => {
+//     const { userId, organizationId } = await getUserContext(request);
+//     return new InMemoryConnectionService(userId, organizationId);
+//   },
+//   createIntegrationService: async () => {
+//     return new InMemoryIntegrationService();
+//   },
+//   nango: {
+//     secretKey: process.env.NANGO_SECRET_KEY!,
+//     host: process.env.NANGO_HOST || 'https://api.nango.dev',
+//     webhookSecret: process.env.NANGO_WEBHOOK_SECRET,
+//   },
+// };
+
+/**
+ * EXAMPLE 4: Full Implementation (All Services)
+ * Complete control with local storage, caching, and encrypted secrets
+ * This is the active configuration for the demo
  */
 export const nangoConfig: NangoPluginConfig = {
-  // Factory for creating ConnectionService instances
-  createConnectionService: async (request?: any) => {
-    // This example uses in-memory storage for demonstration
-    // In production, replace this with your actual database implementation
-
-    console.log('⚠️  Using in-memory ConnectionService - for demo only!');
+  // Connection tracking
+  createConnectionService: async (request) => {
+    console.log('⚠️  Using in-memory services - for demo only!');
     console.log('   In production, implement with your actual database.');
 
-    // Extract user ID from request (in a real app, this would come from your auth system)
-    // For demo, we'll use a hardcoded user ID that matches the one in integrations/page.tsx
-    const userId = 'user-123'; // In production, get this from cookies/JWT/session
-    const organizationId = undefined; // Optional: get from your auth system if using multi-tenancy
-
+    const { userId, organizationId } = await getUserContext(request);
     return new InMemoryConnectionService(userId, organizationId);
+  },
+
+  // Integration caching
+  createIntegrationService: async () => {
+    return new InMemoryIntegrationService();
+  },
+
+  // Secure credential storage
+  createSecretsService: async (request) => {
+    const { userId, organizationId } = await getUserContext(request);
+    return new InMemorySecretsService(userId, organizationId);
   },
 
   // Nango configuration
@@ -118,5 +111,16 @@ export const nangoConfig: NangoPluginConfig = {
   // providers: ['github', 'gitlab', 'slack', 'notion'],
 };
 
-// Export the handler for use in the route file
+// Create and export the handler
 export const nangoHandler = createNangoHandler(nangoConfig);
+
+/**
+ * Progressive Enhancement Strategy:
+ *
+ * 1. Start with zero-config for quick prototyping
+ * 2. Add ConnectionService when you need to track connections
+ * 3. Add IntegrationService to cache provider metadata
+ * 4. Add SecretsService for secure credential management
+ *
+ * Each service is independent - add only what you need!
+ */

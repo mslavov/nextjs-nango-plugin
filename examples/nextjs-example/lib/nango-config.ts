@@ -50,8 +50,7 @@ const getUserContext = async (request?: any) => {
 //   nango: {
 //     secretKey: process.env.NANGO_SECRET_KEY!,
 //     host: process.env.NANGO_HOST || 'https://api.nango.dev',
-//     webhookSecret: process.env.NANGO_WEBHOOK_SECRET,
-//   },
+// //   },
 // };
 
 /**
@@ -70,8 +69,7 @@ const getUserContext = async (request?: any) => {
 //   nango: {
 //     secretKey: process.env.NANGO_SECRET_KEY!,
 //     host: process.env.NANGO_HOST || 'https://api.nango.dev',
-//     webhookSecret: process.env.NANGO_WEBHOOK_SECRET,
-//   },
+// //   },
 // };
 
 /**
@@ -104,7 +102,6 @@ export const nangoConfig: NangoPluginConfig = {
   nango: {
     secretKey: process.env.NANGO_SECRET_KEY!,
     host: process.env.NANGO_HOST || 'https://api.nango.dev',
-    webhookSecret: process.env.NANGO_WEBHOOK_SECRET,
   },
 
   // Optional: limit providers (uncomment and edit if needed)

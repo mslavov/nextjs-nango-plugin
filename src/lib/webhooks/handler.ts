@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import type { ConnectionService } from '../types/connection-service';
 import type { SecretsService } from '../types/secrets-service';
-import crypto from 'crypto';
+import type { NangoService } from '../nango/client';
 
 // Define the webhook event schema matching Nango's actual payload
 const WebhookEventSchema = z.object({
@@ -36,38 +36,28 @@ const WebhookEventSchema = z.object({
   createdAt: z.string().optional(),
 });
 
-// Verify webhook signature
-function verifySignature(body: string, signature: string | null, secret: string): boolean {
-  if (!signature) return false;
-
-  const expectedSignature = crypto
-    .createHmac('sha256', secret)
-    .update(body)
-    .digest('hex');
-
-  return crypto.timingSafeEqual(
-    Buffer.from(signature),
-    Buffer.from(expectedSignature)
-  );
-}
 
 export async function handleWebhook(
   body: string,
   signature: string | null,
   connectionService: ConnectionService | null,
-  webhookSecret: string | null,
+  nangoService: NangoService | null,
   secretsService?: SecretsService | null
 ) {
   try {
-    // Optional: Verify webhook signature
-    if (webhookSecret) {
-      if (!verifySignature(body, signature, webhookSecret)) {
+    // Parse the body first
+    const parsedBody = JSON.parse(body);
+
+    // Optional: Verify webhook signature using Nango's built-in method
+    if (nangoService && signature) {
+      const isValid = (nangoService as any).client.verifyWebhookSignature(signature, parsedBody);
+      if (!isValid) {
         throw new Error('Invalid webhook signature');
       }
     }
 
-    // Parse and validate the webhook event
-    const event = WebhookEventSchema.parse(JSON.parse(body));
+    // Validate the webhook event
+    const event = WebhookEventSchema.parse(parsedBody);
 
     // Handle different event types
     switch (event.type) {

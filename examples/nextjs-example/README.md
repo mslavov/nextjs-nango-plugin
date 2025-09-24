@@ -116,10 +116,7 @@ CREATE TABLE nango_connections (
 
 In your Nango dashboard:
 1. Set webhook URL to: `https://your-app.com/api/nango/webhooks`
-2. Add the webhook secret to `.env.local`:
-   ```env
-   NANGO_WEBHOOK_SECRET=your-webhook-secret
-   ```
+2. Webhook signatures are automatically verified using Nango's built-in verification
 
 ## Troubleshooting
 

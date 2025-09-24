@@ -54,7 +54,6 @@ describe('createNangoHandler', () => {
       nango: {
         secretKey: 'test-secret',
         host: 'https://api.nango.dev',
-        webhookSecret: 'webhook-secret',
       },
       createConnectionService: jest.fn().mockResolvedValue(mockConnectionService),
     };
@@ -219,7 +218,10 @@ describe('createNangoHandler', () => {
         webhookBody,
         'signature-123',
         mockConnectionService,
-        'webhook-secret',
+        expect.objectContaining({
+          createSession: expect.any(Function),
+          listIntegrations: expect.any(Function),
+        }), // NangoService instance
         null // No SecretsService configured returns null
       );
       expect(data).toEqual({ success: true, eventType: 'auth.success' });

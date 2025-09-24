@@ -156,14 +156,13 @@ export function createNangoHandler(config: NangoPluginConfig) {
 
             const body = await request.text();
             const signature = request.headers.get('x-nango-signature');
-            const webhookSecret = config.nango.webhookSecret || null;
 
-            // Pass both services to webhook handler (both optional)
+            // Pass nango service and both optional services to webhook handler
             const result = await handleWebhook(
               body,
               signature,
               connectionService,
-              webhookSecret,
+              nango,
               secretsService
             );
             return jsonResponse(result);

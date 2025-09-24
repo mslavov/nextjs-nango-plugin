@@ -77,7 +77,6 @@ export const nangoConfig: NangoPluginConfig = {
 export const nangoConfig: NangoPluginConfig = {
   nango: {
     secretKey: process.env.NANGO_SECRET_KEY!,
-    webhookSecret: process.env.NANGO_WEBHOOK_SECRET,
   },
   createConnectionService: async (request?) => {
     // Your database adapter for tracking connections
@@ -521,7 +520,7 @@ The plugin automatically processes Nango webhook events with signature verificat
 - `connection:expired` - Token expired → Status: EXPIRED
 
 ### Security
-- Webhook signatures are verified when `NANGO_WEBHOOK_SECRET` is set
+- Webhook signatures are automatically verified using Nango's built-in verification
 - Events are processed atomically with proper error handling
 - Connection IDs are validated before database updates
 
@@ -535,7 +534,6 @@ SUPABASE_SERVICE_ROLE_KEY=your-service-key
 
 # Nango
 NANGO_SECRET_KEY=your-nango-secret-key
-NANGO_WEBHOOK_SECRET=your-webhook-secret # Optional but recommended
 ```
 
 ## CLI Commands

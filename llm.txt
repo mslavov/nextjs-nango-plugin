@@ -5,7 +5,7 @@ Next.js Nango Plugin is a comprehensive OAuth integration solution for Next.js a
 
 ## Package Information
 - **Name**: nextjs-nango-plugin
-- **Version**: 0.3.0
+- **Version**: 0.3.1
 - **Main**: dist/src/index.js
 - **Types**: dist/src/index.d.ts
 - **Repository**: https://github.com/mslavov/nextjs-nango-plugin
@@ -59,7 +59,7 @@ export type { NangoPluginConfig, ServiceFactory } from './lib/types/config';
 
 ### Core Configuration Interface
 
-#### NangoPluginConfig (v0.3.0 - All Services Optional)
+#### NangoPluginConfig (v0.3.1 - All Services Optional)
 ```typescript
 interface NangoPluginConfig {
   // ALL SERVICES ARE NOW OPTIONAL - automatic Nango API fallback when not provided
@@ -77,7 +77,6 @@ interface NangoPluginConfig {
   nango: {
     secretKey: string;           // Required: Nango secret key
     host?: string;               // Optional: API host (default: 'https://api.nango.dev')
-    webhookSecret?: string;      // Optional: For webhook signature verification
   };
 
   // Optional: Restrict available providers
@@ -498,7 +497,6 @@ createConnectionService: async (request) => {
 ```bash
 # Nango Configuration
 NANGO_SECRET_KEY=your-nango-secret-key        # Required
-NANGO_WEBHOOK_SECRET=your-webhook-secret      # Recommended for production
 NANGO_HOST=https://api.nango.dev             # Optional: Custom Nango instance
 
 # Database (example for Supabase)
@@ -564,8 +562,7 @@ export const nangoConfig: NangoPluginConfig = {
     return new YourConnectionService(request);
   },
   nango: {
-    secretKey: process.env.NANGO_SECRET_KEY!,
-    webhookSecret: process.env.NANGO_WEBHOOK_SECRET
+    secretKey: process.env.NANGO_SECRET_KEY!
   }
 };
 
@@ -652,11 +649,10 @@ export const nangoConfig: NangoPluginConfig = {
 
 ### Webhook Security
 ```typescript
-// Configure webhook secret for signature verification
+// Webhook signatures are automatically verified using Nango's built-in verification
 export const nangoConfig: NangoPluginConfig = {
   nango: {
-    secretKey: process.env.NANGO_SECRET_KEY!,
-    webhookSecret: process.env.NANGO_WEBHOOK_SECRET  // HMAC-SHA256 verification
+    secretKey: process.env.NANGO_SECRET_KEY!
   }
 };
 
@@ -710,7 +706,7 @@ HTTP Status Codes:
 - 500: Internal Server Error
 
 ### Security Best Practices
-1. Always set NANGO_WEBHOOK_SECRET in production
+1. Webhook signatures are automatically verified using Nango's built-in verification
 2. Implement proper authentication in createConnectionService
 3. Use Row Level Security (RLS) for database queries
 4. Validate all inputs with Zod schemas
@@ -816,7 +812,7 @@ CREATE TABLE nango_connections (
 
 1. **Connections not showing**: Check ConnectionService implementation returns correct data
 2. **OAuth fails**: Verify Nango configuration and callback URLs
-3. **Webhooks not processing**: Check webhook secret and signature
+3. **Webhooks not processing**: Webhook signatures are automatically verified by Nango SDK
 4. **TypeScript errors**: Ensure all interfaces are properly implemented
 5. **Database errors**: Verify connection string and permissions
 
@@ -883,7 +879,7 @@ Configure any OAuth2/OAuth1 provider in Nango dashboard and use immediately.
 
 ### Production Checklist
 - [ ] Implement proper ConnectionService with real database
-- [ ] Set NANGO_WEBHOOK_SECRET environment variable
+- [ ] Configure webhook URL in Nango dashboard
 - [ ] Configure webhook URL in Nango dashboard
 - [ ] Implement authentication in createConnectionService
 - [ ] Add error tracking (Sentry, etc.)

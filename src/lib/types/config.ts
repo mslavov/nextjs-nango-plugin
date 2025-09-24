@@ -47,8 +47,6 @@ export interface NangoPluginConfig {
     secretKey: string;
     /** Optional: Nango API host (defaults to https://api.nango.dev) */
     host?: string;
-    /** Optional: Webhook secret for signature verification */
-    webhookSecret?: string;
   };
 
   /**

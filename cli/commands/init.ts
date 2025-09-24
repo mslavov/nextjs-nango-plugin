@@ -140,7 +140,6 @@ export const nangoConfig: NangoPluginConfig = {
   nango: {
     secretKey: process.env.NANGO_SECRET_KEY!,
     host: process.env.NANGO_HOST || 'https://api.nango.dev',
-    webhookSecret: process.env.NANGO_WEBHOOK_SECRET,
   },
 
   // Optional: limit providers (uncomment and edit if needed)
@@ -175,8 +174,6 @@ export const DELETE = nangoHandler.DELETE;
 # Get your keys from: https://app.nango.dev/
 NANGO_SECRET_KEY=your-nango-secret-key-here
 NANGO_HOST=https://api.nango.dev
-# Optional: Add webhook secret for secure webhook handling
-# NANGO_WEBHOOK_SECRET=your-webhook-secret-here
 `;
 
   if (fs.existsSync(envPath)) {
@@ -273,7 +270,7 @@ export default function IntegrationsPage() {
   console.log(chalk.cyan('\n4. Configure Nango webhook (optional):'));
   console.log('   In your Nango dashboard, set webhook URL to:');
   console.log('   ' + chalk.white('https://your-app.com/api/nango/webhooks'));
-  console.log('   Add the webhook secret to your .env.local file');
+  console.log('   Webhook signatures are automatically verified');
 
   console.log(chalk.cyan('\n5. Test the integration:'));
   console.log('   Start your dev server: ' + chalk.white('npm run dev'));

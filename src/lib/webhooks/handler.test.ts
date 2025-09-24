@@ -1,10 +1,11 @@
 import { handleWebhook } from './handler';
 import type { ConnectionService } from '../types/connection-service';
 import type { SecretsService } from '../types/secrets-service';
-import crypto from 'crypto';
+import type { NangoService } from '../nango/client';
 
 describe('handleWebhook', () => {
   let mockConnectionService: jest.Mocked<ConnectionService>;
+  let mockNangoService: jest.Mocked<NangoService>;
 
   beforeEach(() => {
     jest.clearAllMocks();
@@ -15,6 +16,15 @@ describe('handleWebhook', () => {
       updateConnectionStatus: jest.fn(),
       getConnection: jest.fn(),
     };
+    mockNangoService = {
+      client: {
+        verifyWebhookSignature: jest.fn(),
+      },
+      createSession: jest.fn(),
+      listIntegrations: jest.fn(),
+      getConnection: jest.fn(),
+      deleteConnection: jest.fn(),
+    } as any;
   });
 
   describe('webhook processing', () => {
@@ -39,7 +49,8 @@ describe('handleWebhook', () => {
         JSON.stringify(event),
         null,
         mockConnectionService,
-        null
+        null, // No NangoService for verification
+        null  // No SecretsService
       );
 
       expect(mockConnectionService.getConnection).toHaveBeenCalledWith('conn-123');
@@ -82,7 +93,8 @@ describe('handleWebhook', () => {
         JSON.stringify(event),
         null,
         mockConnectionService,
-        null
+        null, // No NangoService for verification
+        null  // No SecretsService
       );
 
       expect(mockConnectionService.getConnection).toHaveBeenCalledWith('conn-existing');
@@ -108,7 +120,8 @@ describe('handleWebhook', () => {
         JSON.stringify(event),
         null,
         mockConnectionService,
-        null
+        null, // No NangoService for verification
+        null  // No SecretsService
       );
 
       expect(mockConnectionService.createConnection).not.toHaveBeenCalled();
@@ -133,7 +146,8 @@ describe('handleWebhook', () => {
         JSON.stringify(event),
         null,
         mockConnectionService,
-        null
+        null, // No NangoService for verification
+        null  // No SecretsService
       );
 
       expect(mockConnectionService.updateConnectionStatus).toHaveBeenCalledWith('conn-456', 'ERROR');
@@ -152,7 +166,8 @@ describe('handleWebhook', () => {
         JSON.stringify(event),
         null,
         mockConnectionService,
-        null
+        null, // No NangoService for verification
+        null  // No SecretsService
       );
 
       expect(mockConnectionService.updateConnectionStatus).toHaveBeenCalledWith('conn-789', 'INACTIVE');
@@ -173,7 +188,8 @@ describe('handleWebhook', () => {
         JSON.stringify(event),
         null,
         mockConnectionService,
-        null
+        null, // No NangoService for verification
+        null  // No SecretsService
       );
 
       expect(mockConnectionService.updateConnectionStatus).toHaveBeenCalledWith('conn-111', 'ACTIVE');
@@ -198,7 +214,8 @@ describe('handleWebhook', () => {
         JSON.stringify(event),
         null,
         mockConnectionService,
-        null
+        null, // No NangoService for verification
+        null  // No SecretsService
       );
 
       expect(mockConnectionService.updateConnectionStatus).toHaveBeenCalledWith('conn-222', 'ERROR');
@@ -207,9 +224,7 @@ describe('handleWebhook', () => {
   });
 
   describe('webhook signature verification', () => {
-    const webhookSecret = 'test-secret';
-
-    it('verifies valid signature', async () => {
+    it('verifies valid signature using Nango SDK', async () => {
       const event = {
         type: 'auth',
         operation: 'creation',
@@ -222,11 +237,12 @@ describe('handleWebhook', () => {
         }
       };
       const body = JSON.stringify(event);
-      const signature = crypto.createHmac('sha256', webhookSecret).update(body).digest('hex');
+      const signature = 'valid-signature-from-nango';
 
       mockConnectionService.getConnection.mockResolvedValue(null);
+      (mockNangoService as any).client.verifyWebhookSignature.mockReturnValue(true);
 
-      const result = await handleWebhook(body, signature, mockConnectionService, webhookSecret);
+      const result = await handleWebhook(body, signature, mockConnectionService, mockNangoService, null);
 
       expect(mockConnectionService.createConnection).toHaveBeenCalledWith(
         'slack-prod',
@@ -238,7 +254,7 @@ describe('handleWebhook', () => {
       expect(result).toEqual({ success: true, eventType: 'auth', operation: 'creation' });
     });
 
-    it('rejects invalid signature', async () => {
+    it('rejects invalid signature using Nango SDK', async () => {
       const event = {
         type: 'auth',
         operation: 'creation',
@@ -248,17 +264,18 @@ describe('handleWebhook', () => {
         provider: 'slack',
       };
       const body = JSON.stringify(event);
-      // Invalid signature should be same length as valid hex signature
-      const invalidSignature = '0'.repeat(64); // Same length as SHA256 hex
+      const invalidSignature = 'invalid-signature';
+
+      (mockNangoService as any).client.verifyWebhookSignature.mockReturnValue(false);
 
       await expect(
-        handleWebhook(body, invalidSignature, mockConnectionService, webhookSecret)
+        handleWebhook(body, invalidSignature, mockConnectionService, mockNangoService, null)
       ).rejects.toThrow('Invalid webhook signature');
 
       expect(mockConnectionService.updateConnectionStatus).not.toHaveBeenCalled();
     });
 
-    it('rejects missing signature when secret is configured', async () => {
+    it('processes without verification when signature is missing', async () => {
       const event = {
         type: 'auth',
         operation: 'creation',
@@ -266,17 +283,24 @@ describe('handleWebhook', () => {
         connectionId: 'conn-555',
         providerConfigKey: 'slack-prod',
         provider: 'slack',
+        endUser: {
+          endUserId: 'user-555'
+        }
       };
       const body = JSON.stringify(event);
 
-      await expect(
-        handleWebhook(body, null, mockConnectionService, webhookSecret)
-      ).rejects.toThrow('Invalid webhook signature');
+      mockConnectionService.getConnection.mockResolvedValue(null);
+
+      // Should NOT throw, webhook processes without verification
+      const result = await handleWebhook(body, null, mockConnectionService, mockNangoService, null);
+
+      expect(result).toEqual({ success: true, eventType: 'auth', operation: 'creation' });
+      expect(mockNangoService.client.verifyWebhookSignature).not.toHaveBeenCalled();
 
       expect(mockConnectionService.updateConnectionStatus).not.toHaveBeenCalled();
     });
 
-    it('processes without verification when secret is not configured', async () => {
+    it('processes without verification when NangoService is not provided', async () => {
       const event = {
         type: 'auth',
         operation: 'creation',
@@ -292,7 +316,7 @@ describe('handleWebhook', () => {
 
       mockConnectionService.getConnection.mockResolvedValue(null);
 
-      const result = await handleWebhook(body, null, mockConnectionService, null);
+      const result = await handleWebhook(body, null, mockConnectionService, null, null);
 
       expect(mockConnectionService.createConnection).toHaveBeenCalledWith(
         'slack-prod',
@@ -310,7 +334,7 @@ describe('handleWebhook', () => {
       const invalidBody = 'not valid json';
 
       await expect(
-        handleWebhook(invalidBody, null, mockConnectionService, null)
+        handleWebhook(invalidBody, null, mockConnectionService, null, null)
       ).rejects.toThrow();
 
       expect(mockConnectionService.updateConnectionStatus).not.toHaveBeenCalled();
@@ -323,7 +347,7 @@ describe('handleWebhook', () => {
       const body = JSON.stringify(invalidEvent);
 
       await expect(
-        handleWebhook(body, null, mockConnectionService, null)
+        handleWebhook(body, null, mockConnectionService, null, null)
       ).rejects.toThrow();
 
       expect(mockConnectionService.updateConnectionStatus).not.toHaveBeenCalled();
@@ -341,7 +365,7 @@ describe('handleWebhook', () => {
       const body = JSON.stringify(invalidEvent);
 
       await expect(
-        handleWebhook(body, null, mockConnectionService, null)
+        handleWebhook(body, null, mockConnectionService, null, null)
       ).rejects.toThrow();
 
       expect(mockConnectionService.updateConnectionStatus).not.toHaveBeenCalled();
@@ -373,7 +397,7 @@ describe('handleWebhook', () => {
       const consoleLogSpy = jest.spyOn(console, 'log').mockImplementation();
 
       // Should NOT throw, but continue processing
-      const result = await handleWebhook(body, null, mockConnectionService, null);
+      const result = await handleWebhook(body, null, mockConnectionService, null, null);
 
       expect(result).toEqual({ success: true, eventType: 'auth', operation: 'creation' });
       expect(consoleLogSpy).toHaveBeenCalledWith(
@@ -422,7 +446,8 @@ describe('handleWebhook with optional services', () => {
         JSON.stringify(event),
         null,
         null, // No ConnectionService
-        null
+        null, // No NangoService
+        null  // No SecretsService
       );
 
       expect(result).toEqual({ success: true, eventType: 'auth', operation: 'creation' });
@@ -441,7 +466,8 @@ describe('handleWebhook with optional services', () => {
         JSON.stringify(event),
         null,
         null, // No ConnectionService
-        null
+        null, // No NangoService
+        null  // No SecretsService
       );
 
       expect(result).toEqual({ success: true, eventType: 'sync', operation: undefined });
@@ -459,7 +485,8 @@ describe('handleWebhook with optional services', () => {
         JSON.stringify(event),
         null,
         null, // No ConnectionService
-        null
+        null, // No NangoService
+        null  // No SecretsService
       );
 
       expect(result).toEqual({ success: true, eventType: 'connection.deleted', operation: undefined });
@@ -493,7 +520,7 @@ describe('handleWebhook with optional services', () => {
         JSON.stringify(event),
         null,
         null, // No ConnectionService
-        null,
+        null, // No NangoService
         mockSecretsService
       );
 
@@ -526,7 +553,7 @@ describe('handleWebhook with optional services', () => {
         JSON.stringify(event),
         null,
         null, // No ConnectionService
-        null,
+        null, // No NangoService
         mockSecretsService
       );
 
@@ -611,7 +638,7 @@ describe('handleWebhook with optional services', () => {
         JSON.stringify(event),
         null,
         mockConnectionService,
-        null,
+        null, // No NangoService
         mockSecretsService
       );
 
@@ -647,7 +674,7 @@ describe('handleWebhook with optional services', () => {
         JSON.stringify(event),
         null,
         mockConnectionService,
-        null,
+        null, // No NangoService
         mockSecretsService
       );
 

@@ -4,6 +4,9 @@ import React from 'react';
 
 interface IntegrationCardProps {
   provider: string;
+  displayName?: string;
+  description?: string;
+  logoUrl?: string;
   connection?: {
     status: 'ACTIVE' | 'INACTIVE' | 'ERROR' | 'EXPIRED';
     lastSync?: string;
@@ -15,6 +18,9 @@ interface IntegrationCardProps {
 
 export function IntegrationCard({
   provider,
+  displayName,
+  description,
+  logoUrl,
   connection,
   onConnect,
   onDisconnect,
@@ -24,11 +30,11 @@ export function IntegrationCard({
   const hasError = connection?.status === 'ERROR';
   const isExpired = connection?.status === 'EXPIRED';
 
-  const getStatusColor = () => {
-    if (hasError) return 'bg-red-100 text-red-800';
-    if (isExpired) return 'bg-yellow-100 text-yellow-800';
-    if (isConnected) return 'bg-green-100 text-green-800';
-    return 'bg-gray-100 text-gray-800';
+  const getStatusBadgeClass = () => {
+    if (hasError) return 'badge badge-error';
+    if (isExpired) return 'badge badge-warning';
+    if (isConnected) return 'badge badge-success';
+    return 'badge badge-ghost';
   };
 
   const getStatusText = () => {
@@ -38,55 +44,108 @@ export function IntegrationCard({
     return 'Not Connected';
   };
 
+  const formatProviderName = (name: string) => {
+    return name
+      .split(/[_-]/)
+      .map(word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+      .join(' ');
+  };
+
   return (
-    <div className="border rounded-lg p-4 hover:shadow-lg transition-shadow">
-      <div className="flex items-center justify-between mb-4">
-        <h3 className="text-lg font-semibold capitalize">
-          {provider.replace(/_/g, ' ')}
-        </h3>
-        <span className={`px-2 py-1 rounded text-sm ${getStatusColor()}`}>
-          {getStatusText()}
-        </span>
-      </div>
+    <div className="card bg-base-100 shadow-xl hover:shadow-2xl transition-shadow duration-200">
+      <div className="card-body">
+        {/* Header with Logo and Status */}
+        <div className="flex items-start justify-between">
+          <div className="flex items-center gap-3">
+            {/* Avatar with logo or placeholder */}
+            <div className="avatar placeholder">
+              <div className="w-12 rounded-lg bg-neutral text-neutral-content">
+                {logoUrl ? (
+                  <img
+                    src={logoUrl}
+                    alt={`${displayName || provider} logo`}
+                    className="w-full h-full object-contain p-1"
+                    onError={(e) => {
+                      const target = e.target as HTMLImageElement;
+                      target.style.display = 'none';
+                      if (target.nextElementSibling) {
+                        (target.nextElementSibling as HTMLElement).style.display = 'block';
+                      }
+                    }}
+                  />
+                ) : null}
+                <span className={logoUrl ? 'hidden' : 'block text-xl font-bold'}>
+                  {(displayName || formatProviderName(provider)).charAt(0).toUpperCase()}
+                </span>
+              </div>
+            </div>
+            <div>
+              <h2 className="card-title text-base-content">
+                {displayName || formatProviderName(provider)}
+              </h2>
+              {description && (
+                <p className="text-sm text-base-content/70 line-clamp-1">
+                  {description}
+                </p>
+              )}
+            </div>
+          </div>
+          <span className={getStatusBadgeClass()}>
+            {getStatusText()}
+          </span>
+        </div>
 
-      {connection?.lastSync && (
-        <p className="text-sm text-gray-600 mb-4">
-          Last synced: {new Date(connection.lastSync).toLocaleDateString()}
-        </p>
-      )}
-
-      <div className="flex gap-2">
-        {!isConnected || hasError || isExpired ? (
-          <button
-            onClick={onConnect}
-            disabled={isConnecting}
-            className={`flex-1 py-2 px-4 rounded transition-colors ${
-              isConnecting
-                ? 'bg-gray-300 cursor-not-allowed'
-                : 'bg-blue-500 hover:bg-blue-600 text-white'
-            }`}
-          >
-            {isConnecting ? 'Connecting...' : hasError ? 'Reconnect' : 'Connect'}
-          </button>
-        ) : (
+        {/* Last Sync Info */}
+        {connection?.lastSync && (
           <>
+            <div className="divider my-2"></div>
+            <p className="text-xs text-base-content/50">
+              Last synced: {new Date(connection.lastSync).toLocaleString()}
+            </p>
+          </>
+        )}
+
+        {/* Action Buttons */}
+        <div className="card-actions justify-end mt-4">
+          {!isConnected || hasError || isExpired ? (
             <button
               onClick={onConnect}
               disabled={isConnecting}
-              className="flex-1 py-2 px-4 rounded bg-blue-500 hover:bg-blue-600 text-white transition-colors"
+              className={`btn btn-primary btn-block ${
+                isConnecting ? 'btn-disabled' : ''
+              }`}
             >
-              Refresh Connection
+              {isConnecting ? (
+                <>
+                  <span className="loading loading-spinner"></span>
+                  Connecting...
+                </>
+              ) : hasError || isExpired ? (
+                'Reconnect'
+              ) : (
+                'Connect'
+              )}
             </button>
-            {onDisconnect && (
+          ) : (
+            <>
               <button
-                onClick={onDisconnect}
-                className="py-2 px-4 rounded bg-red-500 hover:bg-red-600 text-white transition-colors"
+                onClick={onConnect}
+                disabled={isConnecting}
+                className="btn btn-ghost flex-1"
               >
-                Disconnect
+                Refresh
               </button>
-            )}
-          </>
-        )}
+              {onDisconnect && (
+                <button
+                  onClick={onDisconnect}
+                  className="btn btn-error btn-outline"
+                >
+                  Disconnect
+                </button>
+              )}
+            </>
+          )}
+        </div>
       </div>
     </div>
   );

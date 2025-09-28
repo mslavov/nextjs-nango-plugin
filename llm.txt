@@ -59,7 +59,7 @@ export type { NangoPluginConfig, ServiceFactory } from './lib/types/config';
 
 ### Core Configuration Interface
 
-#### NangoPluginConfig (v0.3.1 - All Services Optional)
+#### NangoPluginConfig (v0.4.0 - All Services Optional)
 ```typescript
 interface NangoPluginConfig {
   // ALL SERVICES ARE NOW OPTIONAL - automatic Nango API fallback when not provided

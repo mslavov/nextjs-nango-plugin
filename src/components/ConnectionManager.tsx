@@ -25,7 +25,7 @@ interface ConnectionManagerProps {
     };
   };
 
-  providers?: string[]; // Optional: if not provided, fetches from Nango
+  providers?: string[]; // Optional: filter integrations by provider unique_key
   onConnectionUpdate?: () => void;
 
   // Optional API endpoint override
@@ -45,24 +45,34 @@ export function ConnectionManager({
   const [connections, setConnections] = useState<Connection[]>([]);
   const [connecting, setConnecting] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
-  const [availableProviders, setAvailableProviders] = useState<string[]>(providers || []);
+  const [availableProviders, setAvailableProviders] = useState<any[]>([]);
   const [error, setError] = useState<string | null>(null);
 
   // Fetch existing connections and available providers on mount
   useEffect(() => {
     const init = async () => {
       try {
-        // If no providers specified, fetch from Nango
-        if (!providers) {
-          try {
-            const res = await fetch(`${apiEndpoint}/integrations`);
-            if (!res.ok) throw new Error('Failed to fetch integrations');
-            const data = await res.json();
-            setAvailableProviders((data as any[]).map((i: any) => i.id || i.unique_key || i));
-          } catch (error) {
-            console.error('Failed to fetch available integrations:', error);
-            setError('Failed to load available integrations');
+        // Always fetch integrations from Nango to get full metadata
+        try {
+          const res = await fetch(`${apiEndpoint}/integrations`);
+          if (!res.ok) throw new Error('Failed to fetch integrations');
+          const data = await res.json();
+
+          // If providers array is specified, filter the integrations
+          if (providers && providers.length > 0) {
+            // Filter integrations based on the unique_key field
+            const filteredIntegrations = data.filter((integration: any) => {
+              // Match against unique_key (e.g., 'github', 'notion', 'slack')
+              return providers.includes(integration.unique_key);
+            });
+            setAvailableProviders(filteredIntegrations);
+          } else {
+            // No filtering, use all integrations
+            setAvailableProviders(data as any[]);
           }
+        } catch (error) {
+          console.error('Failed to fetch available integrations:', error);
+          setError('Failed to load available integrations');
         }
         await fetchConnections();
       } catch (error) {
@@ -124,6 +134,10 @@ export function ConnectionManager({
       const Nango = (await import('@nangohq/frontend')).default;
 
       // Open Connect UI
+      // Note: Nango's modal creates a full-screen overlay. If you experience issues
+      // with the modal appearing too dark or covering the entire screen with UI
+      // frameworks like DaisyUI, you may need to add custom CSS to adjust the
+      // z-index or overlay opacity. The modal typically uses z-index > 9999.
       const nango = new Nango({ connectSessionToken: sessionToken });
 
       await new Promise<void>((resolve, reject) => {
@@ -202,19 +216,25 @@ export function ConnectionManager({
 
   return (
     <div className={`grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 ${className}`}>
-      {availableProviders.map(provider => {
-        const connection = connections.find(c => c.provider === provider);
+      {availableProviders.map(integration => {
+        // Integration has: id (UUID), unique_key (provider key), provider, display_name, etc.
+        const providerId = integration.unique_key;
+        const connection = connections.find(c => c.provider === providerId);
+
         return (
           <IntegrationCard
-            key={provider}
-            provider={provider}
+            key={integration.id || providerId}
+            provider={providerId}
+            displayName={integration.display_name || integration.displayName}
+            description={integration.description}
+            logoUrl={integration.logo_url || integration.logoUrl}
             connection={connection ? {
               status: connection.status,
               lastSync: connection.last_sync_at
             } : undefined}
-            onConnect={() => handleConnect(provider)}
-            onDisconnect={connection ? () => handleDisconnect(provider, connection.connection_id) : undefined}
-            isConnecting={connecting === provider}
+            onConnect={() => handleConnect(providerId)}
+            onDisconnect={connection ? () => handleDisconnect(providerId, connection.connection_id) : undefined}
+            isConnecting={connecting === providerId}
           />
         );
       })}

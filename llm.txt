@@ -5,7 +5,7 @@ Next.js Nango Plugin is a comprehensive OAuth integration solution for Next.js a
 
 ## Package Information
 - **Name**: nextjs-nango-plugin
-- **Version**: 0.3.1
+- **Version**: 0.4.1
 - **Main**: dist/src/index.js
 - **Types**: dist/src/index.d.ts
 - **Repository**: https://github.com/mslavov/nextjs-nango-plugin

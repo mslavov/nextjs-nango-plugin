@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import type { ConnectionService } from '../types/connection-service';
-import type { SecretsService } from '../types/secrets-service';
+import type { SecretsService, Credentials } from '../types/secrets-service';
 import type { NangoService } from '../nango/client';
 
 // Define the webhook event schema matching Nango's actual payload
@@ -36,6 +36,70 @@ const WebhookEventSchema = z.object({
   createdAt: z.string().optional(),
 });
 
+// Convert Nango credentials to our Credentials interface
+function convertNangoCredentials(nangoCredentials: any): Credentials {
+  const creds: Credentials = {
+    type: 'CUSTOM', // Default to CUSTOM
+    raw: nangoCredentials.raw || {}
+  };
+
+  // Map Nango credential types to our types
+  switch (nangoCredentials.type) {
+    case 'OAUTH2':
+      creds.type = 'OAUTH2';
+      creds.access_token = nangoCredentials.access_token;
+      creds.refresh_token = nangoCredentials.refresh_token;
+      // Convert Date to ISO string if present
+      if ('expires_at' in nangoCredentials) {
+        creds.expires_at = nangoCredentials.expires_at instanceof Date
+          ? nangoCredentials.expires_at.toISOString()
+          : nangoCredentials.expires_at;
+      }
+      break;
+
+    case 'OAUTH2_CC': // OAuth2 Client Credentials
+      creds.type = 'OAUTH2';
+      creds.access_token = nangoCredentials.token;
+      // Convert Date to ISO string if present
+      if ('expires_at' in nangoCredentials) {
+        creds.expires_at = nangoCredentials.expires_at instanceof Date
+          ? nangoCredentials.expires_at.toISOString()
+          : nangoCredentials.expires_at;
+      }
+      break;
+
+    case 'OAUTH1':
+      creds.type = 'OAUTH1';
+      creds.access_token = nangoCredentials.oauth_token;
+      // Store OAuth1 specific fields in raw
+      creds.raw = {
+        ...creds.raw,
+        oauth_token: nangoCredentials.oauth_token,
+        oauth_token_secret: nangoCredentials.oauth_token_secret
+      };
+      break;
+
+    case 'API_KEY':
+      creds.type = 'API_KEY';
+      creds.api_key = nangoCredentials.api_key;
+      break;
+
+    case 'BASIC':
+      creds.type = 'BASIC';
+      creds.username = nangoCredentials.username;
+      creds.password = nangoCredentials.password;
+      break;
+
+    default:
+      // For any other types (JWT, TBA, APP_STORE, etc.), store in raw
+      creds.type = 'CUSTOM';
+      if (creds.raw) {
+        Object.assign(creds.raw, nangoCredentials);
+      }
+  }
+
+  return creds;
+}
 
 export async function handleWebhook(
   body: string,
@@ -110,19 +174,30 @@ export async function handleWebhook(
             }
           }
 
-          // Store credentials if SecretsService exists
-          // Note: Webhook doesn't contain credentials, this would need to be fetched from Nango
-          if (secretsService && event.data?.credentials) {
+          // Fetch and store credentials if both services exist
+          if (secretsService && nangoService) {
             try {
-              await secretsService.storeSecret(
+              // Fetch the connection with credentials from Nango API
+              const connection = await nangoService.getConnection(
                 event.connectionId,
-                event.provider,
-                event.data.credentials,
-                ownerId,
-                organizationId
+                event.providerConfigKey
               );
+
+              if (connection && connection.credentials) {
+                // Convert Nango credentials to match our Credentials interface
+                const credentials = convertNangoCredentials(connection.credentials);
+
+                // Store the credentials using SecretsService
+                await secretsService.storeSecret(
+                  event.connectionId,
+                  event.provider,
+                  credentials,
+                  ownerId,
+                  organizationId
+                );
+              }
             } catch (error) {
-              console.error('Failed to store credentials:', error);
+              console.error('Failed to fetch or store credentials:', error);
             }
           }
         } else if (!event.success && connectionService) {

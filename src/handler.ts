@@ -151,8 +151,8 @@ export function createNangoHandler(config: NangoPluginConfig) {
         switch (path) {
           case 'webhooks': {
             // Get optional services for webhook handling
-            const connectionService = await getConnectionService();
-            const secretsService = await getSecretsService();
+            const connectionService = await getConnectionService(request);
+            const secretsService = await getSecretsService(request);
 
             const body = await request.text();
             const signature = request.headers.get('x-nango-signature');

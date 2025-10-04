@@ -1,6 +1,6 @@
 {
   "name": "nextjs-nango-plugin",
-  "version": "0.4.1",
+  "version": "0.4.2",
   "description": "Easy Nango integration for Next.js apps with flexible database support",
   "main": "dist/src/index.js",
   "types": "dist/src/index.d.ts",

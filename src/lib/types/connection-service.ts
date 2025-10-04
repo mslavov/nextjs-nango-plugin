@@ -130,6 +130,20 @@ export interface ConnectionService {
   ): Promise<Connection>;
 
   /**
+   * Updates connection metadata and other fields.
+   * Implementation should verify ownership before updating.
+   *
+   * @param connectionId - The connection ID to update
+   * @param updates - Partial connection updates (e.g., metadata)
+   * @returns The updated connection record
+   * @throws Error if connection not found or ownership validation fails
+   */
+  updateConnection?(
+    connectionId: string,
+    updates: Partial<Pick<Connection, 'metadata'>>
+  ): Promise<Connection>;
+
+  /**
    * Deletes a connection from your database.
    * Implementation should verify ownership before deletion.
    * Note: This doesn't automatically delete the connection from Nango.

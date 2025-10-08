@@ -138,18 +138,20 @@ export async function handleWebhook(
 
           // Fetch connection details from Nango to get full metadata
           let connectionMetadata: Record<string, any> = {};
+          let nangoConnection: any = null;
+
           if (nangoService) {
             try {
-              const connection = await nangoService.getConnection(
+              nangoConnection = await nangoService.getConnection(
                 event.connectionId,
                 event.providerConfigKey
               );
 
-              if (connection) {
+              if (nangoConnection) {
                 // Store raw OAuth response and connection config for application to use
                 // Applications can extract provider-specific fields as needed
-                const raw = (connection.credentials as any)?.raw || {};
-                const connectionConfig = (connection as any).connection_config || {};
+                const raw = (nangoConnection.credentials as any)?.raw || {};
+                const connectionConfig = (nangoConnection as any).connection_config || {};
 
                 connectionMetadata = {
                   // Store the raw OAuth response (contains team_id, workspace_id, etc.)
@@ -159,25 +161,14 @@ export async function handleWebhook(
                   // Keep provider for easy filtering
                   provider: event.provider,
                 };
-
-                // Store credentials if secretsService exists
-                if (secretsService && connection.credentials) {
-                  const credentials = convertNangoCredentials(connection.credentials);
-                  await secretsService.storeSecret(
-                    event.connectionId,
-                    event.provider,
-                    credentials,
-                    ownerId,
-                    organizationId
-                  );
-                }
               }
             } catch (error) {
               console.error('Failed to fetch connection from Nango:', error);
             }
           }
 
-          // Handle connection creation/update if service exists
+          // Handle connection creation/update FIRST (before storing secrets)
+          // This ensures the database record exists for foreign key constraints
           if (connectionService) {
             // Build complete metadata - merge with event environment if provided
             const metadata: Record<string, any> = {
@@ -201,27 +192,63 @@ export async function handleWebhook(
                     console.log('Could not update connection metadata:', error);
                   }
                 }
-                break;
+                // Don't break - continue to store secrets below
+              } else {
+                // Connection doesn't exist, create it
+                try {
+                  await connectionService.createConnection(
+                    event.providerConfigKey,
+                    event.connectionId,
+                    ownerId,
+                    organizationId,
+                    metadata
+                  );
+                } catch (error) {
+                  // If creation fails, try updating status as fallback
+                  console.log(`Failed to create connection ${event.connectionId}:`, error);
+                  try {
+                    await connectionService.updateConnectionStatus(event.connectionId, 'ACTIVE');
+                  } catch (updateError) {
+                    console.error(`Failed to update connection ${event.connectionId}:`, updateError);
+                  }
+                }
+              }
+            } else {
+              // No getConnection method, try to create directly
+              try {
+                await connectionService.createConnection(
+                  event.providerConfigKey,
+                  event.connectionId,
+                  ownerId,
+                  organizationId,
+                  metadata
+                );
+              } catch (error) {
+                // If creation fails, try updating status as fallback
+                console.log(`Failed to create connection ${event.connectionId}:`, error);
+                try {
+                  await connectionService.updateConnectionStatus(event.connectionId, 'ACTIVE');
+                } catch (updateError) {
+                  console.error(`Failed to update connection ${event.connectionId}:`, updateError);
+                }
               }
             }
+          }
 
+          // NOW store credentials after connection exists in database
+          if (secretsService && nangoConnection?.credentials) {
             try {
-              // Try to create the connection with raw OAuth metadata
-              await connectionService.createConnection(
-                event.providerConfigKey,
+              const credentials = convertNangoCredentials(nangoConnection.credentials);
+              await secretsService.storeSecret(
                 event.connectionId,
+                event.provider,
+                credentials,
                 ownerId,
-                organizationId,
-                metadata
+                organizationId
               );
             } catch (error) {
-              // If creation fails, try updating status as fallback
-              console.log(`Failed to create connection ${event.connectionId}:`, error);
-              try {
-                await connectionService.updateConnectionStatus(event.connectionId, 'ACTIVE');
-              } catch (updateError) {
-                console.error(`Failed to update connection ${event.connectionId}:`, updateError);
-              }
+              console.error('Failed to store secrets:', error);
+              // Don't fail the webhook if secret storage fails
             }
           }
         } else if (!event.success && connectionService) {
